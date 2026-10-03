@@ -60,6 +60,25 @@ for role in "${CORE_ROLES[@]}"; do
   linked=$((linked + 1))
 done
 echo "linked $linked role agents"
+
+# Check pi-subagents dependency (required for role dispatch to actually work)
+SETTINGS_JSON="$PREFIX/settings.json"
+if [[ -f "$SETTINGS_JSON" ]] && python3 -c "
+import json, sys
+try:
+    d = json.load(open('$SETTINGS_JSON'))
+    pkgs = d.get('packages', [])
+    if not any('pi-subagents' in str(p) or 'subagents' in str(p) for p in pkgs):
+        sys.exit(0)
+    sys.exit(1)
+except Exception:
+    sys.exit(0)
+" 2>/dev/null; then
+  echo ""
+  echo "WARNING: pi-subagents not found in $PREFIX/settings.json packages[]"
+  echo "  Role symlinks are installed but dispatch won't work without pi-subagents."
+  echo " Install with:  pi install npm:@tintinweb/pi-subagents"
+fi
 if [[ -n "$NO_PIP" ]]; then
   echo "skipping pip install (--no-pip)"
 elif python3 -c "import yaml" 2>/dev/null; then

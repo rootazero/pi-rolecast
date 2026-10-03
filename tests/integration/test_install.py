@@ -127,3 +127,37 @@ def test_install_keep_old_layout_preserves_existing(tmp_path):
     )
     assert result.returncode == 0
     assert (prefix / "agent-orchestrator").exists()
+
+
+def test_install_warns_when_pi_subagents_missing(tmp_path):
+    """If settings.json has no pi-subagents entry, install.sh warns role dispatch won't work."""
+    prefix = tmp_path / "agent"
+    prefix.mkdir()
+    # Write settings.json with pi-agent-workflow but no pi-subagents
+    settings = prefix / "settings.json"
+    settings.write_text('{"packages": ["npm:@rootazero/pi-agent-workflow"], "subagents": {}}')
+    fw_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        ["bash", str(INSTALL_SH), "--prefix", str(prefix),
+         "--framework-root", str(fw_root), "--no-pip"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pi-subagents not found" in result.stdout
+    assert "pi install npm:@tintinweb/pi-subagents" in result.stdout
+
+
+def test_install_no_warning_when_pi_subagents_present(tmp_path):
+    """If settings.json already lists pi-subagents, no warning fires."""
+    prefix = tmp_path / "agent"
+    prefix.mkdir()
+    settings = prefix / "settings.json"
+    settings.write_text('{"packages": ["npm:@rootazero/pi-agent-workflow", "npm:@tintinweb/pi-subagents"], "subagents": {}}')
+    fw_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        ["bash", str(INSTALL_SH), "--prefix", str(prefix),
+         "--framework-root", str(fw_root), "--no-pip"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pi-subagents not found" not in result.stdout

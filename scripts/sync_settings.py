@@ -54,6 +54,8 @@ def main() -> int:
                         help="skip writing project-local agent files (settings.json only)")
     parser.add_argument("--no-settings", action="store_true",
                         help="skip writing settings.json (agent files only)")
+    parser.add_argument("--status", action="store_true",
+                        help="show current sync state vs profile bindings (no changes)")
     args = parser.parse_args()
     if args.framework_root is None:
         args.framework_root = Path(__file__).resolve().parent.parent
@@ -76,6 +78,9 @@ def main() -> int:
         if role not in CORE_ROLES:
             continue
         new_overrides[role] = {"model": binding.model_id, "channel": binding.channel_id}
+    if args.status:
+        return _show_status(args.settings, args.agents_dir, args.framework_root,
+                            new_overrides)
     rc1 = rc2 = 0
     if not args.no_settings:
         rc1 = _merge_and_write(args.settings, new_overrides, args.dry_run)
@@ -107,6 +112,51 @@ def _clear_settings(settings_path: Path, dry_run: bool) -> int:
     settings["subagents"] = subagents
     return _write_settings(settings_path, settings, dry_run,
                            "removed " + str(len(removed)) + " framework overrides from settings.json")
+
+
+def _show_status(settings_path: Path, agents_dir: Path, framework_root: Path,
+                 expected_overrides: dict) -> int:
+    """Show diff between profile bindings and currently-synced state."""
+    import re
+    fm_re = re.compile(r"^model:\s*(.+?)\s*$", re.MULTILINE)
+    print("=" * 70)
+    print(" pi-agent-workflow sync status")
+    print("=" * 70)
+
+    # Profile bindings
+    print("\nProfile bindings:")
+    for role in sorted(CORE_ROLES):
+        if role not in expected_overrides:
+            print("  " + role.ljust(14) + " (not bound)")
+            continue
+        ov = expected_overrides[role]
+        print("  " + role.ljust(14) + " model=" + ov["model"].ljust(26) +
+              " channel=" + ov["channel"])
+
+    # Project-local agent files
+    print("\nProject-local agent files (" + str(agents_dir) + "):")
+    for role in sorted(CORE_ROLES):
+        path = agents_dir / (role + ".md")
+        if not path.exists():
+            print("  " + role.ljust(14) + " (missing)")
+            continue
+        text = path.read_text()
+        m = fm_re.search(text)
+        actual = m.group(1) if m else "(no model)"
+        match = ""
+        if role in expected_overrides:
+            expected = expected_overrides[role]["model"]
+            match = "OK" if actual == expected else "DRIFT"
+        print("  " + role.ljust(14) + " model=" + actual.ljust(26) + " " + match)
+
+    # Settings.json
+    settings = _read_settings(settings_path)
+    subagents = settings.get("subagents", {})
+    overrides = subagents.get("agentOverrides", {}) or {}
+    framework_overrides = {r: v for r, v in overrides.items() if r in CORE_ROLES}
+    print("\nsettings.json: " + str(settings_path))
+    print("  framework overrides: " + str(len(framework_overrides)) + "/" + str(len(CORE_ROLES)))
+    return 0
 
 
 def _write_agents(agents_dir: Path, framework_root: Path,

@@ -216,6 +216,7 @@ Profile bindings (alias -> model + channel) live in `.pi/agent-workflow.yaml`. P
 ```
 python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --dry-run
 python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --clear
+python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --status   # show current state vs profile bindings (no changes)
 ```
 
 `bash scripts/install.sh` runs sync automatically when `.pi/agent-workflow.yaml` exists in cwd. The npm install path does not.

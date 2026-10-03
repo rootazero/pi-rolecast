@@ -231,3 +231,57 @@ def test_clear_preserves_symlinked_agent_files(tmp_path):
     assert r.returncode == 0
     assert (agents_dir / "custom-role.md").is_symlink()
     assert (agents_dir / "custom-role.md").exists()
+
+
+def test_status_exits_0_and_shows_bindings(tmp_path, tmp_settings):
+    """--status prints profile bindings, project-local files, settings.json state."""
+    agents_dir = tmp_path / ".pi" / "agents"
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--status",
+         "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(tmp_settings),
+         "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    out = r.stdout
+    assert "pi-agent-workflow sync status" in out
+    assert "Profile bindings:" in out
+    assert "Project-local agent files" in out
+    assert "settings.json:" in out
+    # All 11 roles should appear
+    for role in ["architect", "orchestrator", "implementer", "reviewer",
+                 "tester", "mapper", "profiler", "auditor", "canary",
+                 "planner", "docs"]:
+        assert role in out, role + " missing from status output"
+
+
+def test_status_detects_drift_when_agent_file_model_modified(tmp_path, tmp_settings):
+    """If a project-local agent file's model field is manually edited away from the binding,
+    --status should mark it as DRIFT."""
+    agents_dir = tmp_path / ".pi" / "agents"
+    settings = tmp_settings
+    # Sync first
+    subprocess.run(
+        [sys.executable, str(SCRIPT),
+         "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings),
+         "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True, check=True,
+    )
+    # Tamper with one file
+    f = agents_dir / "architect.md"
+    text = f.read_text()
+    f.write_text(text.replace("model: MiniMax-M3", "model: tampered-model"))
+    # Run --status
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--status",
+         "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings),
+         "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    assert "architect" in r.stdout
+    assert "DRIFT" in r.stdout
+    assert "tampered-model" in r.stdout
