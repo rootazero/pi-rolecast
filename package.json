@@ -1,6 +1,6 @@
 {
   "name": "@rootazero/pi-agent-workflow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Language-agnostic multi-agent workflow framework as a Pi extension. Profile-driven model binding, gate-based verification, scaffolder for project bootstrap. Exposes the framework's Python CLI as Pi tools and slash commands.",
   "type": "module",
   "license": "MIT",

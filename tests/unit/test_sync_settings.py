@@ -117,13 +117,20 @@ def test_sync_writes_project_local_agent_files(tmp_path):
                  "canary", "docs"]:
         path = agents_dir / f"{role}.md"
         assert path.exists(), f"missing agent file for {role}"
-    # model: field reflects binding (architect -> MiniMax-M3)
+    # model: field reflects binding with provider/modelId format
+    # (required for pi-subagents' resolveDefaultModel slashIdx check)
     architect = (agents_dir / "architect.md").read_text()
-    assert "model: MiniMax-M3" in architect
+    assert "model: minimax-cn/MiniMax-M3" in architect
     assert "name: architect" in architect  # body preserved
-    # canary -> MiniMax-M2.7-highspeed
+    # canary -> minimax-cn/MiniMax-M2.7-highspeed
     canary = (agents_dir / "canary.md").read_text()
-    assert "model: MiniMax-M2.7-highspeed" in canary
+    assert "model: minimax-cn/MiniMax-M2.7-highspeed" in canary
+    # implementer (deepseek vendor) -> deepseek/deepseek-flash
+    implementer = (agents_dir / "implementer.md").read_text()
+    assert "model: deepseek/deepseek-flash" in implementer
+    # orchestrator (openai vendor) -> openai-codex/gpt-6.1-sol
+    orchestrator = (agents_dir / "orchestrator.md").read_text()
+    assert "model: openai-codex/gpt-6.1-sol" in orchestrator
 
 
 def test_sync_preserves_agent_body_when_overwriting_model(tmp_path):
@@ -151,7 +158,7 @@ def test_sync_preserves_agent_body_when_overwriting_model(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     out = (agents_dir / "architect.md").read_text()
-    assert "model: MiniMax-M3" in out
+    assert "model: minimax-cn/MiniMax-M3" in out
     assert "old-model" not in out
     # Framework body is now in place (we re-wrote from framework template)
     assert "Architect" in out or "Architect" in out
@@ -272,7 +279,7 @@ def test_status_detects_drift_when_agent_file_model_modified(tmp_path, tmp_setti
     # Tamper with one file
     f = agents_dir / "architect.md"
     text = f.read_text()
-    f.write_text(text.replace("model: MiniMax-M3", "model: tampered-model"))
+    f.write_text(text.replace("model: minimax-cn/MiniMax-M3", "model: tampered-model"))
     # Run --status
     r = subprocess.run(
         [sys.executable, str(SCRIPT), "--status",

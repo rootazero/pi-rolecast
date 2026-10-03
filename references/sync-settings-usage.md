@@ -56,3 +56,24 @@ The project-local agent file's `thinking:` field is preserved from the framework
 - Verifiable roles (implementer, tester, canary): `low`
 
 If you want to override `thinking:` per project, edit the project-local file after sync.
+
+## Slash command vs subagent dispatch
+
+The `model:` field in the project-local agent file is **only honoured when the
+role is spawned as a subagent** (via the Agent tool with `subagent_type:`,
+or via `SubagentWorkflow({ agentType: ... })`). When you invoke a role via
+the slash command (`/architect`, `/orchestrator`, …), pi-subagents injects
+the agent's system prompt into the current session but the session's model
+stays as the default set at startup — the agent file's `model:` field is
+ignored on this path.
+
+See [`dispatch-model-semantics.md`](./dispatch-model-semantics.md) for the
+full explanation and the `provider/modelId` format rationale.
+
+## provider/modelId format
+
+`sync_settings.py` rewrites each binding to `provider/modelId` (e.g.
+`minimax-cn/MiniMax-M3`, `openai-codex/gpt-6.1-sol`) before writing it
+into the agent file. `pi-subagents` `resolveDefaultModel` only parses
+strings that contain a `/`; plain `MiniMax-M3` would silently fall back to
+the parent session's model.

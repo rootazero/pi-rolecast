@@ -35,6 +35,62 @@ from profile_loader import (  # noqa: E402
 DEFAULT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 
 
+# pi uses different provider keys than our registry's `vendor` field.
+# Map vendor -> provider so pi-subagents' configModel.indexOf("/") check
+# sees a parseable "provider/modelId" string.  Add to this as new vendors
+# appear in your registry-overrides.yaml.
+VENDOR_TO_PROVIDER = {
+    "minimax": "minimax-cn",
+    "deepseek": "deepseek",
+    "openai": "openai-codex",
+    "anthropic": "anthropic",
+    "moonshotai": "kimi-coding",
+    "kimi-coding": "kimi-coding",
+    "typesafe": "typesafe",
+}
+
+
+def _provider_for_model(model_id: str, registry) -> str:
+    """Look up pi provider for a model id.  Returns "" if unknown.
+
+    Accepts either a Registry object (profile_loader.Registry) or a raw dict
+    with `models: [list of {id, vendor, provider?}]`.
+
+    Resolution order:
+    1. explicit `provider` attribute on the model (set by registry-overrides.yaml)
+    2. vendor -> VENDOR_TO_PROVIDER mapping
+    3. vendor itself (works for vendors like deepseek whose vendor name matches
+       the pi provider key)
+    4. "" (caller should fall back to plain modelId)
+    """
+    if registry is None:
+        return ""
+    # Registry dataclass path
+    if hasattr(registry, "_models"):
+        model = registry._models.get(model_id)
+        if model is not None:
+            if hasattr(model, "provider") and model.provider:
+                return model.provider
+            vendor = getattr(model, "vendor", "") or ""
+            if vendor in VENDOR_TO_PROVIDER:
+                return VENDOR_TO_PROVIDER[vendor]
+            if vendor:
+                return vendor
+        return ""
+    # Dict path (used by tests)
+    for m in registry.get("models", []) or []:
+        if m.get("id") == model_id:
+            if m.get("provider"):
+                return m["provider"]
+            vendor = m.get("vendor", "")
+            if vendor in VENDOR_TO_PROVIDER:
+                return VENDOR_TO_PROVIDER[vendor]
+            if vendor:
+                return vendor
+            break
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sync profile bindings to pi dispatch config + project-local agent files."
@@ -85,7 +141,7 @@ def main() -> int:
     if not args.no_settings:
         rc1 = _merge_and_write(args.settings, new_overrides, args.dry_run)
     if not args.no_agents:
-        rc2 = _write_agents(args.agents_dir, args.framework_root, new_overrides, args.dry_run)
+        rc2 = _write_agents(args.agents_dir, args.framework_root, new_overrides, args.dry_run, registry)
     return rc1 or rc2
 
 
@@ -160,13 +216,17 @@ def _show_status(settings_path: Path, agents_dir: Path, framework_root: Path,
 
 
 def _write_agents(agents_dir: Path, framework_root: Path,
-                  new_overrides: dict, dry_run: bool) -> int:
+                  new_overrides: dict, dry_run: bool,
+                  registry: dict | None = None) -> int:
     if dry_run:
         for role in CORE_ROLES:
             if role not in new_overrides:
                 continue
+            model_id = new_overrides[role]["model"]
+            provider = _provider_for_model(model_id, registry)
+            full = (provider + "/" + model_id) if provider else model_id
             print("would write " + str(agents_dir / (role + ".md")) +
-                  " model=" + new_overrides[role]["model"])
+                  " model=" + full)
         return 0
     agents_dir.mkdir(parents=True, exist_ok=True)
     written = 0
@@ -179,7 +239,10 @@ def _write_agents(agents_dir: Path, framework_root: Path,
             continue
         dst = agents_dir / (role + ".md")
         body = src.read_text()
-        updated = _set_frontmatter_field(body, "model", new_overrides[role]["model"])
+        model_id = new_overrides[role]["model"]
+        provider = _provider_for_model(model_id, registry)
+        full = (provider + "/" + model_id) if provider else model_id
+        updated = _set_frontmatter_field(body, "model", full)
         dst.write_text(updated)
         written += 1
     print("wrote " + str(written) + " project-local agent files to " + str(agents_dir))
