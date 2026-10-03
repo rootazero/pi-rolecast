@@ -189,6 +189,21 @@ You can also override aliases at `<project>/.pi/agent-workflow-aliases-overrides
 
 See [references/registry-resolution.md](references/registry-resolution.md) for the full algorithm.
 
+### Bridging profile bindings to pi dispatch
+
+Profile bindings (alias -> model + channel) live in `.pi/agent-workflow.yaml`. Pi subagent dispatch reads `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<role>.model`. The bridge is `scripts/sync_settings.py`:
+
+```
+python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --dry-run
+python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --clear
+```
+
+`bash scripts/install.sh` runs sync automatically when `.pi/agent-workflow.yaml` exists in cwd. The npm install path does not.
+
+### When bindings won't resolve at runtime
+
+The framework's built-in `registry/built_in.yaml` ships vendor names your pi may not have (e.g. `claude-opus-5-5`, `gpt-6.1-sol`). Drop a user-global file at `~/.pi/agent-workflow/registry-overrides.yaml` mapping the IDs you actually have, then re-run sync.
+
 ## Uninstall
 
 ### Manual
@@ -227,7 +242,8 @@ pi-agent-workflow/
 │   ├── install.sh                    # framework installer (fall-back path)
 │   ├── profile_loader.py             # load + validate a profile
 │   ├── gate_runner.py                # execute phases, write logs
-│   └── scaffolder.py                 # init / diff / validate
+│   ├── scaffolder.py                 # init / diff / validate
+│   └── sync_settings.py              # profile -> pi settings.json bridge
 ├── agents/                           # 11 immutable core role agents
 │   ├── orchestrator.md
 │   ├── architect.md

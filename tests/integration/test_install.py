@@ -1,9 +1,9 @@
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 INSTALL_SH = Path(__file__).resolve().parents[2] / "scripts" / "install.sh"
+EXAMPLE_PROFILE = Path(__file__).resolve().parents[2] / "examples" / "rust" / "profile.yaml"
 
 
 def test_install_creates_framework_dir_and_symlinks(tmp_path):
@@ -38,3 +38,51 @@ def test_install_dry_run_does_not_write(tmp_path):
     )
     assert result.returncode == 0
     assert not (prefix / "pi-agent-workflow").exists()
+
+
+def test_install_syncs_profile_bindings_when_present(tmp_path):
+    """When cwd has a profile, install.sh auto-runs sync_settings.py."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    profile_dir = project_dir / ".pi"
+    profile_dir.mkdir()
+    profile_dir.joinpath("agent-workflow.yaml").write_text(
+        EXAMPLE_PROFILE.read_text()
+    )
+
+    prefix = tmp_path / "agent"
+    prefix.mkdir()
+    fw_root = Path(__file__).resolve().parents[2]
+    home = tmp_path / "home"
+    home.mkdir()
+    agent_dir = home / ".pi" / "agent"
+    agent_dir.mkdir(parents=True)
+
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+
+    result = subprocess.run(
+        ["bash", str(INSTALL_SH), "--prefix", str(prefix),
+         "--framework-root", str(fw_root), "--no-pip"],
+        cwd=str(project_dir), env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "found .pi/agent-workflow.yaml" in result.stdout
+    assert "synced" in result.stdout
+
+
+def test_install_no_sync_when_no_profile(tmp_path):
+    """When cwd has no profile, install.sh should not run sync_settings."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    prefix = tmp_path / "agent"
+    prefix.mkdir()
+    fw_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        ["bash", str(INSTALL_SH), "--prefix", str(prefix),
+         "--framework-root", str(fw_root), "--no-pip"],
+        cwd=str(project_dir), capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "found .pi/agent-workflow.yaml" not in result.stdout
+    assert "scaffold a profile" in result.stdout

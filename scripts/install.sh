@@ -79,4 +79,15 @@ else
 fi
 
 echo "install complete"
-echo "next: run 'python3 \$SKILL_ROOT/scripts/scaffolder.py init' in your project"
+
+# Sync profile bindings to pi dispatch config (only if cwd has one).
+if [[ -f "./.pi/agent-workflow.yaml" ]]; then
+  echo "found .pi/agent-workflow.yaml in cwd; syncing to settings.json"
+  python3 "$FRAMEWORK_ROOT/scripts/sync_settings.py" \
+    --profile "./.pi/agent-workflow.yaml" \
+    --framework-root "$FRAMEWORK_ROOT" || \
+    echo "warning: sync_settings.py failed (run it manually)"
+else
+  echo "next: scaffold a profile in your project with:"
+  echo "  python3 \$SKILL_ROOT/scripts/scaffolder.py init --template rust"
+fi
