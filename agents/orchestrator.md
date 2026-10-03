@@ -1,6 +1,8 @@
 ---
 name: orchestrator
 description: Coordinate the multi-agent workflow; dispatch to roles based on user intent.
+model: deepseek-flash
+thinking: high
 ---
 
 # Orchestrator

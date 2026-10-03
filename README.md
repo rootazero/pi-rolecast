@@ -43,8 +43,10 @@ bash scripts/install.sh
 Default prefix is `$HOME/.pi/agent/`. The installer:
 
 1. Creates `~/.pi/agent/pi-agent-workflow` → symlink to this repo's `pi-agent-workflow/` directory.
-2. Creates `~/.pi/agent/agent-<role>/SKILL.md` → symlinks to `pi-agent-workflow/agents/<role>.md` for each of the 11 core roles. pi's agent discovery picks these up so `/architect`, `/implementer`, etc. become available.
-3. Runs `python3 -m pip install --user -r requirements.txt` (PyYAML + pytest) unless PyYAML is already importable.
+2. Creates `~/.pi/agent/agents/<role>.md` → symlinks to `pi-agent-workflow/agents/<role>.md` for each of the 11 core roles (this is the location read by the **pi-subagents** extension, which provides `@architect` / `@implementer` / `@planner` / etc. dispatch with `model:` + `thinking:` frontmatter binding).
+3. Removes any deprecated `~/.pi/agent/agent-<role>/SKILL.md` directories left over from prior installs (0.1.0/1.1). Use `--keep-old-layout` to skip this cleanup.
+4. If a profile is found in the current working directory (`.pi/agent-workflow.yaml`), runs `sync_settings.py` which both updates `~/.pi/agent/settings.json` and writes project-local `.pi/agents/<role>.md` files with `model:` + `thinking:` frontmatter populated from your bindings — these project-local copies override the global symlinks for that project (per pi-subagents precedence).
+5. Runs `python3 -m pip install --user -r requirements.txt` (PyYAML + pytest) unless PyYAML is already importable.
 
 Flags:
 
@@ -52,6 +54,24 @@ Flags:
 - `--framework-root DIR` — treat `DIR` as the framework root (default: parent of `scripts/`)
 - `--no-pip` — skip the `pip install` step (useful in CI or when PyYAML is system-installed)
 - `--dry-run` — print what would be created without writing anything
+- `--keep-old-layout` — skip removal of legacy `agent-<role>/SKILL.md` directories
+
+### Uninstall
+
+For `pi install`:
+
+```bash
+pi uninstall /Volumes/TBU/Workspace/Skills/pi-agent-workflow
+# or, if installed from npm:
+pi uninstall npm:@rootazero/pi-agent-workflow
+```
+
+For the manual install:
+
+```bash
+rm "$HOME/.pi/agent/pi-agent-workflow"
+rm -f "$HOME/.pi/agent/agents"/*.md  # remove the role symlinks
+```
 
 Dry-run example:
 
@@ -269,6 +289,17 @@ pi-agent-workflow/
     ├── unit/                         # Python unit tests + TS extension smoke test
     └── integration/                  # install + sample-rust fixtures
 ```
+
+## How dispatch works
+
+The framework does not run a custom dispatch extension itself. Instead, the **pi-subagents** extension (third-party, by `@tintinweb`, install separately: `pi install npm:@tintinweb/pi-subagents`) reads each role's `model:` + `thinking:` frontmatter and dispatches accordingly.
+
+When `install.sh` or `sync_settings.py` runs against a project with a profile:
+
+- Global symlinks at `~/.pi/agent/agents/<role>.md` point at the framework defaults (`deepseek-flash` everywhere).
+- `sync_settings.py` then writes **project-local** copies at `<project>/.pi/agents/<role>.md` with `model:` + `thinking:` set from your profile bindings.
+
+**Project-local copies win** (pi-subagents' load order: project before global), so `@architect` in a project will use whatever you bound architect to (e.g. `MiniMax-M3`), without affecting other projects. Edit your profile and re-run `sync_settings.py` to re-sync.
 
 ## Building from source
 

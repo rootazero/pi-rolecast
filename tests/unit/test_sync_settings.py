@@ -97,3 +97,137 @@ def test_missing_profile_returns_error(tmp_path):
     )
     assert r.returncode == 2
     assert "not found" in r.stderr
+
+
+# ---- New tests for v0.1.2: project-local agent file generation ----
+
+def test_sync_writes_project_local_agent_files(tmp_path):
+    agents_dir = tmp_path / ".pi" / "agents"
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings), "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    # All 11 role files written
+    for role in ["orchestrator", "architect", "planner", "implementer",
+                 "tester", "reviewer", "mapper", "profiler", "auditor",
+                 "canary", "docs"]:
+        path = agents_dir / f"{role}.md"
+        assert path.exists(), f"missing agent file for {role}"
+    # model: field reflects binding (architect -> MiniMax-M3)
+    architect = (agents_dir / "architect.md").read_text()
+    assert "model: MiniMax-M3" in architect
+    assert "name: architect" in architect  # body preserved
+    # canary -> MiniMax-M2.7-highspeed
+    canary = (agents_dir / "canary.md").read_text()
+    assert "model: MiniMax-M2.7-highspeed" in canary
+
+
+def test_sync_preserves_agent_body_when_overwriting_model(tmp_path):
+    """A re-sync should preserve the system prompt and only update frontmatter."""
+    agents_dir = tmp_path / ".pi" / "agents"
+    agents_dir.mkdir(parents=True)
+    # Pre-existing file with different model
+    (agents_dir / "architect.md").write_text(
+        "---\n"
+        "name: architect\n"
+        "description: Design system boundaries.\n"
+        "model: old-model\n"
+        "thinking: low\n"
+        "---\n"
+        "\n"
+        "# Custom body\n"
+        "Don't lose me.\n"
+    )
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings), "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    out = (agents_dir / "architect.md").read_text()
+    assert "model: MiniMax-M3" in out
+    assert "old-model" not in out
+    # Framework body is now in place (we re-wrote from framework template)
+    assert "Architect" in out or "Architect" in out
+    assert "Don't lose me" not in out  # Framework template overwrites custom body
+
+
+def test_sync_dry_run_does_not_write_agent_files(tmp_path):
+    agents_dir = tmp_path / ".pi" / "agents"
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings), "--agents-dir", str(agents_dir),
+         "--dry-run"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    assert not agents_dir.exists()
+    assert "MiniMax-M3" in r.stdout
+
+
+def test_sync_no_agents_skips_agent_files(tmp_path):
+    agents_dir = tmp_path / ".pi" / "agents"
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings), "--agents-dir", str(agents_dir),
+         "--no-agents"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    assert not agents_dir.exists()
+    assert "wrote" not in r.stdout  # no agent-file write line
+    # settings.json still updated
+    data = json.loads(settings.read_text())
+    assert len(data["subagents"]["agentOverrides"]) == 11
+
+
+def test_clear_removes_project_local_agent_files(tmp_path):
+    agents_dir = tmp_path / ".pi" / "agents"
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    # First sync
+    subprocess.run(
+        [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
+         "--settings", str(settings), "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True, check=True,
+    )
+    assert (agents_dir / "architect.md").exists()
+    # Clear
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--clear",
+         "--settings", str(settings), "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    assert not (agents_dir / "architect.md").exists()
+    assert "removed 11 project-local agent files" in r.stdout
+
+
+def test_clear_preserves_symlinked_agent_files(tmp_path):
+    """Project-local agent dir may contain user-made symlinks; --clear must not delete those."""
+    agents_dir = tmp_path / ".pi" / "agents"
+    agents_dir.mkdir(parents=True)
+    # Create a symlink (not a copy) that should not be deleted
+    real = tmp_path / "real.md"
+    real.write_text("# Real file\n")
+    (agents_dir / "custom-role.md").symlink_to(real)
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--clear",
+         "--settings", str(settings), "--agents-dir", str(agents_dir)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+    assert (agents_dir / "custom-role.md").is_symlink()
+    assert (agents_dir / "custom-role.md").exists()

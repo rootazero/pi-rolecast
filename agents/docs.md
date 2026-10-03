@@ -1,6 +1,8 @@
 ---
 name: docs
 description: Write READMEs, visual assets, frontend copy, documentation.
+model: deepseek-flash
+thinking: medium
 ---
 
 # Docs

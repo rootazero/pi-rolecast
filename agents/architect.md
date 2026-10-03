@@ -1,6 +1,8 @@
 ---
 name: architect
 description: Design system boundaries, public APIs, error strategies. Output is judgement, not code.
+model: deepseek-flash
+thinking: high
 ---
 
 # Architect

@@ -1,6 +1,8 @@
 ---
 name: reviewer
 description: Review a diff before merge. Enforce non-negotiables and channel-trust flags.
+model: deepseek-flash
+thinking: high
 ---
 
 # Reviewer

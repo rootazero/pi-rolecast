@@ -1,6 +1,8 @@
 ---
 name: auditor
 description: Audit security, permissions, and cross-agent trust boundaries.
+model: deepseek-flash
+thinking: high
 ---
 
 # Auditor

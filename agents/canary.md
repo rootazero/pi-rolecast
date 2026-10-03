@@ -1,6 +1,8 @@
 ---
 name: canary
 description: Verify the relay (or any third-party model route) is serving the upstream you think it is.
+model: deepseek-flash
+thinking: low
 ---
 
 # Canary

@@ -1,6 +1,8 @@
 ---
 name: planner
 description: Break a request into ordered steps with cross-module contracts. Output is verifiable.
+model: deepseek-flash
+thinking: medium
 ---
 
 # Planner

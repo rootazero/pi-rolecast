@@ -1,6 +1,8 @@
 ---
 name: mapper
 description: Build a structural index / dependency graph for the project.
+model: deepseek-flash
+thinking: medium
 ---
 
 # Mapper

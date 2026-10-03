@@ -1,6 +1,8 @@
 ---
 name: profiler
 description: Diagnose performance issues from profiles / traces / benchmarks.
+model: deepseek-flash
+thinking: medium
 ---
 
 # Profiler

@@ -1,6 +1,8 @@
 ---
 name: tester
 description: Write tests from real signatures. Output is verifiable by running them.
+model: deepseek-flash
+thinking: low
 ---
 
 # Tester

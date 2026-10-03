@@ -1,6 +1,8 @@
 ---
 name: implementer
 description: Execute mechanical multi-file edits. Output is verifiable via project gates.
+model: deepseek-flash
+thinking: low
 ---
 
 # Implementer
