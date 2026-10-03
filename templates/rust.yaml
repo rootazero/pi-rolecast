@@ -1,0 +1,45 @@
+# Pre-fill for Rust projects. Edit fields to match your toolchain.
+
+framework_version: 0.1.0
+name: my-rust-project
+description: |
+  Workflow for the foo crate.
+
+gates:
+  compile:
+    commands:
+      - cargo check --message-format short --all-targets
+    timeout: 300
+  lint:
+    commands:
+      - cargo clippy -- -D warnings
+    timeout: 300
+  test:
+    commands:
+      - cargo test
+    timeout: 900
+
+bindings:
+  architect:      {alias: opus-thinking-medium, channels: [official]}
+  planner:        {alias: deepseek-verifiable, channels: [official]}
+  implementer:    {alias: deepseek-verifiable, channels: [official]}
+  tester:         {alias: deepseek-verifiable, channels: [official]}
+  reviewer:       {alias: gpt-judgment-high, channels: [official, relay-default]}
+  mapper:         {alias: deepseek-verifiable, channels: [official]}
+  profiler:       {alias: deepseek-verifiable, channels: [official]}
+  auditor:        {alias: opus-thinking-high, channels: [official]}
+  canary:         {alias: minimax-fast, channels: [official]}
+  docs:           {alias: minimax-medium, channels: [official]}
+  orchestrator:   {alias: gpt-judgment-medium, channels: [official, relay-default]}
+
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '#\[allow\('
+      message: "never silence a diagnostic with #[allow(...)]"
+    - pattern: '\.unwrap\(\)'
+      message: "no bare .unwrap() — handle the Result"
+
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

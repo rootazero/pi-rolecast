@@ -1,0 +1,38 @@
+# Built-in alias set. Profiles reference aliases; framework resolves them.
+# Adding an alias = PR; renaming an alias = breaking change.
+
+aliases:
+  opus-thinking-medium:
+    preferred:       claude-opus-5-5
+    fallback_chain:  [claude-sonnet-5-5]
+    notes: "Frontier reasoning + thinking; judgement work"
+
+  opus-thinking-high:
+    preferred:       claude-opus-5-5
+    fallback_chain:  []
+    notes: "High-effort reasoning"
+
+  gpt-judgment-medium:
+    preferred:       gpt-6.1-sol
+    fallback_chain:  []
+    notes: "Judgement + relay channel; output reviewed"
+
+  gpt-judgment-high:
+    preferred:       gpt-6.1-sol
+    fallback_chain:  []
+    notes: "High-effort judgement"
+
+  deepseek-verifiable:
+    preferred:       deepseek-v4.1-flash
+    fallback_chain:  []
+    notes: "Verifiable-output work; trusted channel only"
+
+  minimax-medium:
+    preferred:       minimax-m3
+    fallback_chain:  []
+    notes: "Generation + general purpose"
+
+  minimax-fast:
+    preferred:       minimax-m3
+    fallback_chain:  []
+    notes: "Cheap, fast"

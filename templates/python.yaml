@@ -1,0 +1,43 @@
+framework_version: 0.1.0
+name: my-python-project
+description: |
+  Workflow for a Python project.
+
+gates:
+  compile:
+    commands:
+      - python3 -m compileall -q src
+    timeout: 120
+  lint:
+    commands:
+      - ruff check .
+    timeout: 120
+  test:
+    commands:
+      - pytest
+    timeout: 600
+
+bindings:
+  architect:      {alias: opus-thinking-medium, channels: [official]}
+  planner:        {alias: deepseek-verifiable, channels: [official]}
+  implementer:    {alias: deepseek-verifiable, channels: [official]}
+  tester:         {alias: deepseek-verifiable, channels: [official]}
+  reviewer:       {alias: gpt-judgment-high, channels: [official, relay-default]}
+  mapper:         {alias: deepseek-verifiable, channels: [official]}
+  profiler:       {alias: deepseek-verifiable, channels: [official]}
+  auditor:        {alias: opus-thinking-high, channels: [official]}
+  canary:         {alias: minimax-fast, channels: [official]}
+  docs:           {alias: minimax-medium, channels: [official]}
+  orchestrator:   {alias: gpt-judgment-medium, channels: [official, relay-default]}
+
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '# type: ignore'
+      message: "no `# type: ignore` — fix the type"
+    - pattern: '\bprint\('
+      message: "no debug print() in committed code"
+
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

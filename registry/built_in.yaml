@@ -1,0 +1,42 @@
+# Built-in model registry shipped with pi-agent-workflow.
+# Updated via framework version bumps. Add new models here; never mutate a
+# shipped model — change `status: deprecated` or `withdrawn` instead.
+
+models:
+  - id: claude-opus-5-5
+    vendor: anthropic
+    capabilities: {reasoning: high, thinking: true, context_window: 200000}
+    channels:
+      - {id: official,      trust: trusted}
+      - {id: relay-default, trust: unverified}
+    cost_tier: high
+    status: stable
+
+  - id: claude-sonnet-5-5
+    vendor: anthropic
+    capabilities: {reasoning: medium, thinking: false, context_window: 200000}
+    channels:
+      - {id: official, trust: trusted}
+    cost_tier: medium
+    status: stable
+
+  - id: deepseek-v4.1-flash
+    vendor: deepseek
+    capabilities: {reasoning: medium, thinking: false, context_window: 64000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: low
+    status: stable
+
+  - id: gpt-6.1-sol
+    vendor: openai
+    capabilities: {reasoning: high, thinking: true, context_window: 128000}
+    channels: [{id: relay-default, trust: unverified}]
+    cost_tier: medium
+    status: stable
+
+  - id: minimax-m3
+    vendor: minimax
+    capabilities: {reasoning: medium, thinking: false, context_window: 200000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: low
+    status: stable

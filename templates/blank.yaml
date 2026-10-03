@@ -1,0 +1,8 @@
+framework_version: 0.1.0
+name: my-project
+description: |
+  (describe your workflow here)
+
+gates: {}
+
+bindings: {}

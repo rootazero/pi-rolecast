@@ -1,0 +1,20 @@
+# Framework-local state (gate_runner --log-dir default; project-local when
+# framework is installed in a user's project tree).
+.pi/
+agent-workflow-logs/
+
+# Build artifacts and dependencies (TS extension).
+dist/
+node_modules/
+*.tsbuildinfo
+
+# Python build / test artefacts (excluded from git tracking;
+# package.json's `files[]` re-negates the `scripts/` ones for the npm tarball).
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS / editor.
+.DS_Store
+*.swp

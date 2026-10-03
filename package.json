@@ -1,0 +1,71 @@
+{
+  "name": "@rootazero/pi-agent-workflow",
+  "version": "0.1.0",
+  "description": "Language-agnostic multi-agent workflow framework as a Pi extension. Profile-driven model binding, gate-based verification, scaffolder for project bootstrap. Exposes the framework's Python CLI as Pi tools and slash commands.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "rootazero",
+    "email": "zouguojunx@gmail.com"
+  },
+  "homepage": "https://github.com/rootazero/Skills/tree/main/pi-agent-workflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rootazero/Skills.git",
+    "directory": "pi-agent-workflow"
+  },
+  "bugs": {
+    "url": "https://github.com/rootazero/Skills/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/extension.js",
+  "types": "./dist/extension.d.ts",
+  "files": [
+    "dist/",
+    "scripts/*.py",
+    "scripts/*.sh",
+    "!scripts/__pycache__/",
+    "!scripts/**/__pycache__/",
+    "!scripts/*.pyc",
+    "agents/",
+    "registry/",
+    "templates/",
+    "examples/",
+    "references/",
+    "SKILL.md",
+    "README.md",
+    "requirements.txt"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "tsx --test tests/unit/test_extension.ts",
+    "prepublishOnly": "npm run typecheck && npm run build && npm test"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "agents",
+    "workflow",
+    "multi-agent",
+    "scaffolder",
+    "gate-runner"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.0",
+    "@earendil-works/pi-coding-agent": ">=0.84.0",
+    "@earendil-works/pi-tui": ">=0.84.0"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/extension.js"
+    ]
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}
