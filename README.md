@@ -286,5 +286,7 @@ If you maintain a Pi extension registry or community compat list, PRs adding pi-
 
 ## Spec and plan
 
-- Spec: `docs/superpowers/specs/2026-10-03-pi-agent-workflow-design.md`
-- Plan: `docs/superpowers/plans/2026-10-03-pi-agent-workflow.md`
+Design history preserved in the original `rootazero/Skills` repo (kept for the record of how this framework was designed and built):
+
+- Spec: [rootazero/Skills :: docs/superpowers/specs/2026-10-03-pi-agent-workflow-design.md](https://github.com/rootazero/Skills/blob/main/docs/superpowers/specs/2026-10-03-pi-agent-workflow-design.md)
+- Plan: [rootazero/Skills :: docs/superpowers/plans/2026-10-03-pi-agent-workflow.md](https://github.com/rootazero/Skills/blob/main/docs/superpowers/plans/2026-10-03-pi-agent-workflow.md)

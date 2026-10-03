@@ -8,14 +8,13 @@
     "name": "rootazero",
     "email": "zouguojunx@gmail.com"
   },
-  "homepage": "https://github.com/rootazero/Skills/tree/main/pi-agent-workflow#readme",
+  "homepage": "https://github.com/rootazero/pi-agent-workflow#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rootazero/Skills.git",
-    "directory": "pi-agent-workflow"
+    "url": "git+https://github.com/rootazero/pi-agent-workflow.git"
   },
   "bugs": {
-    "url": "https://github.com/rootazero/Skills/issues"
+    "url": "https://github.com/rootazero/pi-agent-workflow/issues"
   },
   "publishConfig": {
     "access": "public"
