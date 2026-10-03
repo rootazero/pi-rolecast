@@ -47,6 +47,7 @@ A profile is project-local. It declares gates (compile / lint / test commands), 
 
 - [Profile schema](references/profile-schema.md) — full YAML spec, every field, every validation rule.
 - [Registry resolution](references/registry-resolution.md) — alias → model + channel algorithm, override layers, status semantics.
+- [Sync settings](references/sync-settings-usage.md) — how profile bindings reach pi-subagents dispatch (project-local agent files + settings.json bridge).
 - [Gate runner usage](references/gate-runner-usage.md) — CLI, exit codes, escalation, logs.
 - [Scaffolder usage](references/scaffolder-usage.md) — `init` / `diff` / `validate`, auto-detect, templates.
 - [Migration from rust-agent-workflow](references/migration-from-rust-agent-workflow.md) — rename table, manual steps.
