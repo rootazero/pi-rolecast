@@ -1,0 +1,100 @@
+framework_version: 0.3.0
+name: sample-rust-v3-fixture
+description: |
+  v0.3.0 dynamic-binding fixture. Exercises fallback_chain on bindings
+  + requires / preferences from role-pack frontmatter.
+  Sibling to sample-rust (v0.2.0 schema).
+
+workflow:
+  role_groups: [coding]
+
+gates:
+  compile:
+    commands: [cargo check --message-format short --all-targets]
+    timeout: 300
+  test:
+    commands: [cargo test]
+    timeout: 900
+
+bindings:
+  # v0.3.0: explicit fallback chain. requires/preferences come from
+  # role-packs/coding/coding-architect.md.
+  coding-architect:
+    alias: opus-thinking-medium
+    channels: [official]
+    fallback_chain:
+      - anthropic/claude-opus-5-5
+      - anthropic/claude-sonnet-5-5
+      - deepseek/deepseek-flash
+
+  # v0.3.0: fallback chain only. requires comes from role-pack.
+  coding-implementer:
+    alias: deepseek-verifiable
+    channels: [official]
+    fallback_chain:
+      - deepseek/deepseek-flash
+      - openai/gpt-4o-mini
+
+  # v0.3.0: explicit fallback chain covering the canary's alias.
+  coding-canary:
+    alias: minimax-fast
+    channels: [official]
+    fallback_chain:
+      - minimax/minimax-m3
+      - openai/gpt-4o-mini
+
+  # v0.3.0: alias + fallback chain for high-reasoning review work.
+  # reviewer role requires reasoning_tier=high + context_window>=64000
+  # + features=[thinking, tool_use] (from role-pack).
+  coding-reviewer:
+    alias: gpt-judgment-high
+    channels: [relay-default]
+    fallback_chain:
+      - openai/gpt-6.1-sol
+      - anthropic/claude-opus-5-5
+
+  # Fill out the rest with explicit fallback chains.
+  coding-planner:
+    alias: deepseek-verifiable
+    channels: [official]
+    fallback_chain: [deepseek/deepseek-flash]
+
+  coding-tester:
+    alias: deepseek-verifiable
+    channels: [official]
+    fallback_chain: [deepseek/deepseek-flash]
+
+  coding-mapper:
+    alias: deepseek-verifiable
+    channels: [official]
+    fallback_chain: [deepseek/deepseek-flash]
+
+  coding-profiler:
+    alias: deepseek-verifiable
+    channels: [official]
+    fallback_chain: [deepseek/deepseek-flash]
+
+  coding-auditor:
+    alias: opus-thinking-high
+    channels: [official]
+    fallback_chain: [anthropic/claude-opus-5-5]
+
+  coding-docs:
+    alias: minimax-medium
+    channels: [official]
+    fallback_chain: [minimax/minimax-m3]
+
+  coding-orchestrator:
+    alias: gpt-judgment-medium
+    channels: [official, relay-default]
+    fallback_chain: [openai/gpt-6.1-sol]
+
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '#\[allow\('
+      message: "no #[allow(...)]"
+
+escalation:
+  max_attempts: 1
+  on_permanent_failure: stop
+  preserve_logs: true

@@ -2,6 +2,11 @@
 # framework is installed in a user's project tree).
 .pi/
 agent-workflow-logs/
+# Re-include rolecast.yaml fixtures used by Node + Python integration tests.
+# The tests/fixtures tree is the only place project-shaped .pi/ dirs belong
+# in version control.
+!tests/fixtures/sample-rust/.pi/
+!tests/fixtures/sample-rust-v3/.pi/
 
 # Build artifacts and dependencies (TS extension).
 dist/
