@@ -67,6 +67,31 @@ jobs:
         # If trusted publishing is NOT yet configured on npmjs.com, set the
         # NPM_TOKEN secret and uncomment the env: line below to fall back
         # to classic token auth.
+        id: publish
         run: npm publish --access public --provenance
         # env:
         #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Known npm 11 first-publish noise: when OIDC trusted publishing creates
+      # a new package, the CLI prints E404 ('Not found') on a HEAD / PUT
+      # verification call AFTER the actual publish succeeds. The package is
+      # live (verified via `npm view`) but the publish step exits 1.
+      # Re-run on next OIDC publish will not hit this — only the FIRST
+      # publish of a package via trusted publishing triggers it.
+      # Verified for v0.3.0: PUT 200 + provenance attestation published,
+      # `npm view pi-rolecast@0.3.0 version` returned 0.3.0, then the
+      # workflow still printed E404 and exited 1. The verify step below
+      # treats that as success and turns the workflow green.
+      - name: Verify publish succeeded
+        if: steps.publish.outcome == 'failure'
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          echo "npm publish reported failure; checking whether version is actually live (npm 11 first-publish noise workaround)."
+          sleep 10
+          if npm view "pi-rolecast@${VERSION}" version; then
+            echo "::notice::Version ${VERSION} is live on npm; treating publish step as success despite E404 noise."
+            exit 0
+          fi
+          echo "::error::Version ${VERSION} not found on npm; publish genuinely failed."
+          exit 1
