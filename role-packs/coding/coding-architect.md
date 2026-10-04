@@ -1,5 +1,6 @@
 ---
-name: architect
+name: coding-architect
+category: coding
 description: Design system boundaries, public APIs, error strategies. Output is judgement, not code.
 model: deepseek-flash
 thinking: high
@@ -29,3 +30,4 @@ You design. You do not implement. Output a clear architecture decision, not a di
 ## Output category
 
 Judgement. Bind to a high-reasoning model on a trusted channel.
+

@@ -1,5 +1,6 @@
 ---
-name: canary
+name: coding-canary
+category: coding
 description: Verify the relay (or any third-party model route) is serving the upstream you think it is.
 model: deepseek-flash
 thinking: low
@@ -27,3 +28,4 @@ You run a canary query, you don't review its content.
 ## Output category
 
 Meta. Orthogonal to verifiable/judgement.
+

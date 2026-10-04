@@ -1,48 +1,76 @@
 ---
 title: Dispatch model semantics
-description: How role model bindings flow through pi-subagents dispatch
+description: How role model bindings flow through pi-subagents dispatch paths
 ---
 
 # Dispatch model semantics
 
 `sync_settings.py` writes project-local agent files at `<cwd>/.pi/agents/<role>.md`
 with a `model: provider/modelId` frontmatter field for every profile binding.
-This doc explains how that field is consumed — and the surprise that trips up
-real-world testing.
+This doc explains how that field is consumed on each dispatch path.
 
-## Two dispatch paths in pi-subagents
+## The three dispatch paths in pi-subagents
 
-### Path A: Slash command (`/architect`, `/orchestrator`, …)
+### Path 1: Plain text prompt (no `@` mention)
 
-- pi-subagents injects the agent's **system prompt** into the *current*
-  session
-- The session's **model stays as it was set at startup** (the default)
-- The agent file's `model:` field is **ignored**
-- `thinking:` is similarly ignored
+- User types `design the API` or `/architect design the API` directly
+- pi checks for a registered slash command — `/architect` is **not** registered
+  (only `/agents` is, by pi-subagents itself)
+- Text falls through to the `input` event and reaches the **main LLM**
+- The main LLM may decide to call the `agent` tool with
+  `subagent_type: "architect"`, but that is its choice — not guaranteed
+- The main LLM uses the session's default model
 
-This is what happens when a user types `/architect` in an interactive `pi`
-session, or when `pi -p "/orchestrator ..."` is run.
+> **Pitfall.** Typing `/architect design the API` does *not* dispatch a
+> subagent. It is just text the main LLM sees. To get a guaranteed
+> subagent dispatch you must use either Path 2 (`@handle` syntax) or Path 3
+> (the `agent` tool).
 
-### Path B: Subagent dispatch (`Agent` tool, `SubagentWorkflow`)
+### Path 2: `@handle` mention syntax (Claude Code style)
+
+- User types `@architect design the API`
+- pi-subagents' `input` handler (`dist/index.js` ≈ line 800) intercepts the
+  text. The mention regex is `/^@([\w-]+)\s+([\s\S]+)$/`
+- pi-subagents dispatches **synchronously** to a subagent with the agent
+  file's `model:` and `thinking:` fields
+- The subagent session is **fresh**; the parent's model does not change
+
+> **Quirk.** This path requires `@` (not `/`) and at least one space before
+> the message. `@architect` with no message is left alone.
+
+### Path 3: `agent` tool / `SubagentWorkflow`
 
 - `Agent({ subagent_type: 'architect' })` or
-  `SubagentWorkflow({ agentType: 'architect' })` spawns a **fresh session**
-- The new session uses the agent file's `model:` and `thinking:`
-- `resolveDefaultModel` (`@tintinweb/pi-subagents/src/agent-runner.ts:370`)
-  parses `provider/modelId` and resolves via the model registry
+  `SubagentWorkflow({ agentType: 'architect' })` — model-driven dispatch
+- The new subagent session uses the agent file's `model:` and `thinking:`
+- `resolveDefaultModel` (`@tintinweb/pi-subagents/dist/agent-runner.js`
+  ≈ line 316) parses `provider/modelId` and resolves via the model registry
+
+```js
+// Agent tool example (subagent_type matches the role name)
+await parallel([
+  () => agent("design the API", { label: 'architect', agentType: 'architect' }),
+  () => agent("implement it",  { label: 'impl',     agentType: 'implementer' }),
+])
+
+// SubagentWorkflow
+await agent('coordinate the build', { agentType: 'orchestrator' })
+```
 
 ## Why `provider/modelId` format
 
 `resolveDefaultModel` does:
 
-```ts
-const slashIdx = configModel.indexOf("/");
-if (slashIdx !== -1) {
-  const provider = configModel.slice(0, slashIdx);
-  const modelId  = configModel.slice(slashIdx + 1);
-  // … resolve in registry
+```js
+if (configModel) {
+  const slashIdx = configModel.indexOf("/");
+  if (slashIdx !== -1) {
+    const provider = configModel.slice(0, slashIdx);
+    const modelId  = configModel.slice(slashIdx + 1);
+    // resolve in registry.find(provider, modelId)
+  }
 }
-// otherwise fall through to parentModel
+return parentModel;  // silent fallback
 ```
 
 A plain `model: MiniMax-M3` (no slash) is rejected. The runner silently
@@ -63,23 +91,20 @@ model set at startup.
 If your registry uses a vendor not in the table, add it to the script's
 `VENDOR_TO_PROVIDER` and re-run `sync_settings.py`.
 
-## How to exercise bindings
+## Summary
 
-Use the `Agent` tool with `subagent_type`, or `SubagentWorkflow` with
-`agentType`.  The `model:` field is honoured on these paths.
+| Path                | Dispatch mechanism | Binding honoured? | Caveats                          |
+| ------------------- | ------------------ | ----------------- | -------------------------------- |
+| Plain text          | main LLM           | no                | model is session default         |
+| `@handle` mention   | sync subagent      | **yes**           | needs `@` + space + message      |
+| `agent` tool        | sync subagent      | **yes**           | model-driven, needs no @ syntax  |
+| `SubagentWorkflow`  | subagent pipeline  | **yes**           | orchestrator pattern             |
 
-```js
-// Agent tool example (subagent_type matches the role name)
-await parallel([
-  () => agent("design the API", { label: 'architect', agentType: 'architect' }),
-  () => agent("implement it",  { label: 'impl',     agentType: 'implementer' }),
-])
+## Practical usage
 
-// SubagentWorkflow
-await agent('coordinate the build', { agentType: 'orchestrator' })
-```
+For interactive `pi` sessions, the cleanest invocation is the `@handle`
+mention. For automation and subagent pipelines, use `agent` /
+`SubagentWorkflow` with `subagent_type` / `agentType`.
 
-Slash commands (`/architect ...`) will **not** honour bindings in this
-version. If you need that, file an issue upstream against
-`@tintinweb/pi-subagents` — the runner would need to call
-`setModel()` before injecting the prompt.
+The `sync_settings.py` output is the same for both — `provider/modelId` is
+all that matters.

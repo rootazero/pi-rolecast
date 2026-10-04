@@ -1,5 +1,6 @@
 ---
-name: tester
+name: coding-tester
+category: coding
 description: Write tests from real signatures. Output is verifiable by running them.
 model: deepseek-flash
 thinking: low
@@ -28,3 +29,4 @@ You write tests against actual function signatures, not invented ones.
 ## Output category
 
 Verifiable. Gates run them.
+

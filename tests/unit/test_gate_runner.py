@@ -20,14 +20,16 @@ def run_gate_runner(profile_yaml: str, *args: str) -> subprocess.CompletedProces
 
 def test_gate_runner_runs_all_phases_in_order():
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     gates:
       a: {commands: ["true"]}
       b: {commands: ["true"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "all")
     assert result.returncode == 0
@@ -38,14 +40,16 @@ def test_gate_runner_runs_all_phases_in_order():
 
 def test_gate_runner_failing_command_returns_1():
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     gates:
       a: {commands: ["true"]}
       b: {commands: ["false"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "all")
     assert result.returncode == 1
@@ -59,13 +63,15 @@ def test_gate_runner_unknown_phase_returns_2():
     # Spec §5.3 rule 4: missing phase = no-op (skip), but explicit
     # --phase <undeclared> must be an error (Review Focus #4).
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     gates:
       a: {commands: ["true"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "z")
     assert result.returncode == 2
@@ -82,14 +88,16 @@ def test_gate_runner_missing_profile_returns_2():
 
 def test_gate_runner_runs_single_phase():
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     gates:
       a: {commands: ["true"]}
       b: {commands: ["false"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "a")
     assert result.returncode == 0
@@ -100,16 +108,18 @@ def test_gate_runner_runs_single_phase():
 
 def test_escalation_retries_until_max_attempts():
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     escalation:
       max_attempts: 3
       on_permanent_failure: stop
     gates:
       a: {commands: ["false"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "a")
     assert result.returncode == 1
@@ -119,9 +129,11 @@ def test_escalation_retries_until_max_attempts():
 
 def test_escalation_continue_keeps_going_after_failure():
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     escalation:
       max_attempts: 1
       on_permanent_failure: continue
@@ -129,7 +141,7 @@ def test_escalation_continue_keeps_going_after_failure():
       a: {commands: ["false"]}
       b: {commands: ["true"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "all")
     assert result.returncode == 1
@@ -141,14 +153,16 @@ def test_escalation_continue_keeps_going_after_failure():
 def test_escalation_default_is_stop():
     # Without explicit escalation, on_permanent_failure defaults to "stop".
     profile = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: ok
     description: ok
+    workflow:
+      role_groups: [coding]
     gates:
       a: {commands: ["false"]}
       b: {commands: ["true"]}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     result = run_gate_runner(profile, "--phase", "all")
     assert result.returncode == 1

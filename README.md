@@ -1,16 +1,32 @@
-# pi-agent-workflow
+# pi-rolecast
 
-Language-agnostic multi-agent framework. **Profiles** bind roles to models; **gates** verify the project compiles and tests pass; a **scaffolder** bootstraps a profile in any project.
+Multi-agent role framework for [Pi](https://github.com/earendil-works/pi-coding-agent).
+**Groups of specialist agents** (coding, video, ...) bound to per-role models
+and dispatched via `@<group>-<role>` mention syntax or the `Agent` tool.
+Profile-driven, gate-verified, language-agnostic.
 
-The framework owns the **configuration contract**, not execution: it ships 11 immutable core role agents (architect, planner, implementer, tester, reviewer, mapper, profiler, auditor, canary, docs, orchestrator), a built-in model registry with aliases, a Python gate-runner, and a scaffolder. A profile is one YAML file under your project (`<project>/.pi/agent-workflow.yaml`) that decides which alias + channel serves each role and which commands the gate-runner must execute.
+A profile is one YAML file under your project (`<project>/.pi/rolecast.yaml`)
+that decides which alias + channel serves each role and which commands the
+gate-runner must execute. The framework owns the **configuration contract**,
+not execution.
+
+## v0.2.0 breaking changes
+
+If you're coming from `pi-agent-workflow` v0.1.x, see [references/migration-from-rust-agent-workflow.md](references/migration-from-rust-agent-workflow.md). Summary:
+
+- Package renamed: `@rootazero/pi-agent-workflow` → `pi-rolecast` (unscoped).
+- Role names prefixed: `architect` → `coding-architect`, etc.
+- Profile filename: `.pi/agent-workflow.yaml` → `.pi/rolecast.yaml`.
+- Profile gains `workflow.role_groups: [coding]` field.
+- Role source moved: `agents/` → `role-packs/<group>/`.
 
 ## Prerequisites
 
 - macOS or Linux
 - Python 3.10+ (3.12 is fine)
-- For the install gate, pyproject.toml or package.json + tsconfig.json or go.mod
+- Node.js 20+ (only needed to build the Pi extension from source; pre-built `dist/` ships in the npm tarball)
+- For the install gate, a marker file for your language: `Cargo.toml`, `pyproject.toml`, `package.json + tsconfig.json`, or `go.mod`
 - A pi-compatible chat client (or `pi` CLI) to dispatch roles
-- Node.js 20+ (only needed to build the Pi extension from source; pre-built `dist/` is shipped in the npm tarball)
 
 ## Install
 
@@ -18,17 +34,17 @@ The framework owns the **configuration contract**, not execution: it ships 11 im
 
 ```bash
 # From a local checkout:
-pi install /Volumes/TBU/Workspace/Skills/pi-agent-workflow
+pi install /Volumes/TBU/Workspace/pi-rolecast
 
-# From npm (when published):
-pi install npm:@rootazero/pi-agent-workflow
+# From npm:
+pi install npm:pi-rolecast
 ```
 
 This registers the framework as a Pi extension. After installing, run `/reload` in Pi. The extension exposes:
 
 - **Slash commands**: `/workflow-init`, `/workflow-validate`, `/workflow-diff`, `/workflow-run`
 - **Model-callable tools**: `scaffolder_init`, `scaffolder_validate`, `scaffolder_diff`, `gate_run`
-- **A `session_start` hook** that notifies when no `.pi/agent-workflow.yaml` is present
+- **A `session_start` hook** that notifies when no `.pi/rolecast.yaml` is present
 
 The extension is a thin TypeScript bridge (`src/extension.ts` → `dist/extension.js`) that shells out to the Python CLI in `scripts/`. Python is the source of truth; the extension adds Pi integration on top.
 
@@ -42,97 +58,41 @@ bash scripts/install.sh
 
 Default prefix is `$HOME/.pi/agent/`. The installer:
 
-1. Creates `~/.pi/agent/pi-agent-workflow` → symlink to this repo's `pi-agent-workflow/` directory.
-2. Creates `~/.pi/agent/agents/<role>.md` → symlinks to `pi-agent-workflow/agents/<role>.md` for each of the 11 core roles (this is the location read by the **pi-subagents** extension, which provides `@architect` / `@implementer` / `@planner` / etc. dispatch with `model:` + `thinking:` frontmatter binding).
-3. Removes any deprecated `~/.pi/agent/agent-<role>/SKILL.md` directories left over from prior installs (0.1.0/1.1). Use `--keep-old-layout` to skip this cleanup.
-4. If a profile is found in the current working directory (`.pi/agent-workflow.yaml`), runs `sync_settings.py` which both updates `~/.pi/agent/settings.json` and writes project-local `.pi/agents/<role>.md` files with `model:` + `thinking:` frontmatter populated from your bindings — these project-local copies override the global symlinks for that project (per pi-subagents precedence).
-5. Runs `python3 -m pip install --user -r requirements.txt` (PyYAML + pytest) unless PyYAML is already importable.
+1. Creates `~/.pi/agent/pi-rolecast/` → symlink to this repo.
+2. Creates `~/.pi/agent/agents/<group>-<role>.md` → symlinks to `pi-rolecast/role-packs/<group>/<role>.md` for every role in every group. This is the location read by the **pi-subagents** extension.
+3. Removes the legacy `~/.pi/agent/pi-agent-workflow` symlink if found (v0.1.x).
+4. Removes any deprecated `~/.pi/agent/agent-<role>/SKILL.md` directories left over from earlier installs.
+5. If a profile is found in the current working directory (`.pi/rolecast.yaml` or legacy `.pi/agent-workflow.yaml`), runs `sync_settings.py` which both updates `~/.pi/agent/settings.json` and writes project-local `.pi/agents/<group>-<role>.md` files with `model:` + `thinking:` frontmatter populated from your bindings — these project-local copies override the global symlinks for that project (per pi-subagents precedence).
+6. Runs `python3 -m pip install --user -r requirements.txt` (PyYAML + pytest) unless PyYAML is already importable.
 
 Flags:
 
 - `--prefix DIR` — install under `DIR` instead of `~/.pi/agent/`
 - `--framework-root DIR` — treat `DIR` as the framework root (default: parent of `scripts/`)
-- `--no-pip` — skip the `pip install` step (useful in CI or when PyYAML is system-installed)
+- `--no-pip` — skip the `pip install` step
 - `--dry-run` — print what would be created without writing anything
 - `--keep-old-layout` — skip removal of legacy `agent-<role>/SKILL.md` directories
 
-### Uninstall
-
-For `pi install`:
-
-```bash
-pi uninstall /Volumes/TBU/Workspace/Skills/pi-agent-workflow
-# or, if installed from npm:
-pi uninstall npm:@rootazero/pi-agent-workflow
-```
-
-For the manual install:
-
-```bash
-rm "$HOME/.pi/agent/pi-agent-workflow"
-rm -f "$HOME/.pi/agent/agents"/*.md  # remove the role symlinks
-```
-
-Dry-run example:
-
-```bash
-bash scripts/install.sh --dry-run
-```
-
-### Uninstall
-
-For `pi install`:
-
-```bash
-pi uninstall /Volumes/TBU/Workspace/Skills/pi-agent-workflow
-# or, if installed from npm:
-pi uninstall npm:@rootazero/pi-agent-workflow
-```
-
-For the manual install:
-
-```bash
-rm "$HOME/.pi/agent/pi-agent-workflow"
-for role in orchestrator architect planner implementer tester reviewer \
-            mapper profiler auditor canary docs; do
-    rm -rf "$HOME/.pi/agent/agent-$role"
-done
-```
-
 ## Configure (bootstrap a project)
-
-### Manual
 
 ```bash
 cd <your-project>
-python3 ~/.pi/agent/pi-agent-workflow/scripts/scaffolder.py init
+python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py init
 ```
 
-The scaffolder inspects your tree for `Cargo.toml`, `pyproject.toml`, `package.json + tsconfig.json`, or `go.mod`, picks the matching template, and writes `<project>/.pi/agent-workflow.yaml` with sensible defaults (gates, bindings, escalation). For multi-language projects it lists candidates and asks you to pick one with `--template`.
+The scaffolder inspects your tree, picks the matching template, and writes `<project>/.pi/rolecast.yaml` with sensible defaults (workflow.role_groups, gates, bindings, escalation). For multi-language projects it lists candidates and asks you to pick one with `--template`.
 
-Templates ship in `templates/{rust,typescript,python,go,blank}.yaml`. Each declares 11 role bindings and 2–3 gate phases (compile / lint / test).
+Templates ship in `templates/{rust,typescript,python,go,blank}.yaml`. Each declares 11 role bindings (the `coding` group) and 2–3 gate phases (compile / lint / test).
 
 Validate and inspect:
 
 ```bash
-# Is the profile well-formed and does every alias resolve?
-python3 ~/.pi/agent/pi-agent-workflow/scripts/scaffolder.py validate \
-    --profile .pi/agent-workflow.yaml
+python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py validate \
+    --profile .pi/rolecast.yaml
 
-# Did the framework schema drift since I generated my profile?
-python3 ~/.pi/agent/pi-agent-workflow/scripts/scaffolder.py diff \
-    --profile .pi/agent-workflow.yaml
+python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py diff \
+    --profile .pi/rolecast.yaml
 ```
-
-### Via a pi agent
-
-> Bootstrap a workflow profile for this project, then validate it.
-
-The agent will:
-
-1. Run `python3 $SKILL_ROOT/scripts/scaffolder.py init` (auto-detects language).
-2. Run `scaffolder.py validate --profile .pi/agent-workflow.yaml`.
-3. Report any required-but-missing fields and ask you to fill them in.
 
 ## Use
 
@@ -143,7 +103,7 @@ After `pi install`, the extension exposes:
 **Slash commands:**
 
 ```
-/workflow-init                 # scaffold .pi/agent-workflow.yaml
+/workflow-init                 # scaffold .pi/rolecast.yaml
 /workflow-validate             # validate the project profile
 /workflow-diff                 # check for framework schema drift
 /workflow-run [phase]          # run gate-runner; phase defaults to all
@@ -156,45 +116,26 @@ After `pi install`, the extension exposes:
 - `scaffolder_diff` — wraps `python3 scripts/scaffolder.py diff`
 - `gate_run` — wraps `python3 scripts/gate_runner.py`
 
-**`session_start` hook** — if no `.pi/agent-workflow.yaml` is found in the project root, you'll see a one-time hint pointing to `/workflow-init`.
-
-Example interaction:
-
-> /workflow-init
-> /workflow-validate
-> /workflow-run compile
-> /workflow-run test
-
-Or let the model call them in response to natural-language requests:
-
-> Bootstrap a workflow profile for this project, then validate it.
-> Imperative workflow: plan, implement, verify this change.
+**`session_start` hook** — if no `.pi/rolecast.yaml` is found in the project root, you'll see a one-time hint pointing to `/workflow-init`.
 
 ### Via the manual install (shell only)
 
-Run gates (compile / lint / test):
-
 ```bash
-python3 ~/.pi/agent/pi-agent-workflow/scripts/gate_runner.py \
-    --profile .pi/agent-workflow.yaml
+python3 ~/.pi/agent/pi-rolecast/scripts/gate_runner.py \
+    --profile .pi/rolecast.yaml
 ```
 
-Run one phase at a time:
+### Dispatching a role
 
-```bash
-python3 ~/.pi/agent/pi-agent-workflow/scripts/gate_runner.py \
-    --profile .pi/agent-workflow.yaml --phase compile
-```
-
-Logs land under `--log-dir` (default `<project>/.pi/agent-workflow-logs/<timestamp>/<phase>-attempt<N>.log`) plus a `summary.json` written to stdout.
-
-Dispatching a role is the role's name with a `/` prefix once pi's discovery has indexed the symlinks:
+Roles use the **full prefixed name** in dispatch:
 
 ```
-/architect design a module boundary for the auth layer
-/implementer /dev add the new endpoint
-/reviewer /dev review this diff
+@coding-architect design a module boundary for the auth layer
+@coding-implementer add the new endpoint
+@coding-reviewer review this diff
 ```
+
+The framework does not register `/role` slash commands. pi-subagents handles dispatch via the `@handle` mention syntax and the `Agent` tool. See [`references/dispatch-model-semantics.md`](references/dispatch-model-semantics.md) for the full mechanism.
 
 ## Customise models
 
@@ -202,57 +143,31 @@ Profile bindings reference **aliases** (e.g. `opus-thinking-medium`, `gpt-judgme
 
 To override the registry **without editing the framework**, drop a YAML file at one of two layers (deep-merge precedence, lowest first):
 
-1. `<project>/.pi/agent-workflow-registry.yaml` — project-local (highest priority)
-2. `~/.pi/agent-workflow/registry-overrides.yaml` — user-global
+1. `<project>/.pi/rolecast-registry.yaml` — project-local (highest priority)
+2. `~/.pi/rolecast/registry-overrides.yaml` — user-global
 
-You can also override aliases at `<project>/.pi/agent-workflow-aliases-overrides.yaml` and `~/.pi/agent-workflow/aliases-overrides.yaml`.
+You can also override aliases at `<project>/.pi/rolecast-aliases-overrides.yaml` and `~/.pi/rolecast/aliases-overrides.yaml`.
 
 See [references/registry-resolution.md](references/registry-resolution.md) for the full algorithm.
 
 ### Bridging profile bindings to pi dispatch
 
-Profile bindings (alias -> model + channel) live in `.pi/agent-workflow.yaml`. Pi subagent dispatch reads `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<role>.model`. The bridge is `scripts/sync_settings.py`:
+Profile bindings (alias -> model + channel) live in `.pi/rolecast.yaml`. Pi subagent dispatch reads `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<group>-<role>.model`. The bridge is `scripts/sync_settings.py`:
 
 ```
-python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --dry-run
-python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --clear
-python3 ~/.pi/agent/pi-agent-workflow/scripts/sync_settings.py --status   # show current state vs profile bindings (no changes)
+python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --dry-run
+python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --clear
+python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --status        # show current state vs profile bindings (no changes)
+python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --list-groups  # show available role groups from role-packs/
 ```
 
-`bash scripts/install.sh` runs sync automatically when `.pi/agent-workflow.yaml` exists in cwd. The npm install path does not.
-
-### When bindings won't resolve at runtime
-
-The framework's built-in `registry/built_in.yaml` ships vendor names your pi may not have (e.g. `claude-opus-5-5`, `gpt-6.1-sol`). Drop a user-global file at `~/.pi/agent-workflow/registry-overrides.yaml` mapping the IDs you actually have, then re-run sync.
-
-## Uninstall
-
-### Manual
-
-```bash
-# Remove the framework symlink
-rm "$HOME/.pi/agent/pi-agent-workflow"
-
-# Remove the 11 role symlinks
-for role in orchestrator architect planner implementer tester reviewer \
-            mapper profiler auditor canary docs; do
-    rm -rf "$HOME/.pi/agent/agent-$role"
-done
-```
-
-If you installed under a custom prefix, substitute that path. The installer did not touch anything outside the prefix, so no other cleanup is needed. PyYAML is installed via `--user` and is not removed automatically; remove it with `python3 -m pip uninstall PyYAML` if you no longer need it.
-
-### Via a pi agent
-
-> Uninstall pi-agent-workflow.
-
-The agent will run the `rm` commands above against the same prefix it used at install time. Confirm the prefix before it runs.
+`bash scripts/install.sh` runs sync automatically when a profile is found in cwd.
 
 ## Directory layout
 
 ```
-pi-agent-workflow/
-├── SKILL.md                          # skill doc for pi (back-compat)
+pi-rolecast/
+├── SKILL.md                          # skill doc for pi
 ├── README.md                         # this file
 ├── package.json                      # npm + Pi `pi.extensions` declaration
 ├── tsconfig.json                     # TypeScript build config
@@ -260,15 +175,16 @@ pi-agent-workflow/
 │   └── extension.ts                  # Pi extension factory
 ├── dist/                             # built TS (gitignored; shipped in npm tarball)
 ├── scripts/
-│   ├── install.sh                    # framework installer (fall-back path)
-│   ├── profile_loader.py             # load + validate a profile
+│   ├── install.sh                    # framework installer
+│   ├── profile_loader.py             # load + validate a profile (v0.2.0 grouped roles)
 │   ├── gate_runner.py                # execute phases, write logs
 │   ├── scaffolder.py                 # init / diff / validate
 │   └── sync_settings.py              # profile -> pi settings.json bridge
-├── agents/                           # 11 immutable core role agents
-│   ├── orchestrator.md
-│   ├── architect.md
-│   └── …
+├── role-packs/
+│   └── coding/                       # 11 coding-specialist roles
+│       ├── coding-architect.md
+│       ├── coding-orchestrator.md
+│       └── …
 ├── registry/
 │   ├── built_in.yaml                 # model registry (status, channels)
 │   └── aliases.yaml                  # alias → model
@@ -279,16 +195,18 @@ pi-agent-workflow/
 │   ├── go.yaml
 │   └── blank.yaml
 ├── examples/
-│   └── rust/                         # reference profile for migration
+│   └── rust/                         # reference profile
 ├── references/                       # deep docs (one per concept)
 │   ├── profile-schema.md
 │   ├── registry-resolution.md
 │   ├── gate-runner-usage.md
 │   ├── scaffolder-usage.md
+│   ├── sync-settings-usage.md
+│   ├── dispatch-model-semantics.md
 │   └── migration-from-rust-agent-workflow.md
 └── tests/
     ├── unit/                         # Python unit tests + TS extension smoke test
-    └── integration/                  # install + sample-rust fixtures
+    └── integration/                  # install + sample-rust fixtures + dispatch PoC
 ```
 
 ## How dispatch works
@@ -297,44 +215,46 @@ The framework does not run a custom dispatch extension itself. Instead, the **pi
 
 When `install.sh` or `sync_settings.py` runs against a project with a profile:
 
-- Global symlinks at `~/.pi/agent/agents/<role>.md` point at the framework defaults (`deepseek-flash` everywhere).
-- `sync_settings.py` then writes **project-local** copies at `<project>/.pi/agents/<role>.md` with `model:` + `thinking:` set from your profile bindings.
+- Global symlinks at `~/.pi/agent/agents/<group>-<role>.md` point at the framework defaults (`deepseek-flash` everywhere).
+- `sync_settings.py` then writes **project-local** copies at `<project>/.pi/agents/<group>-<role>.md` with `model:` + `thinking:` set from your profile bindings.
 
-**Project-local copies win** (pi-subagents' load order: project before global), so `@architect` in a project will use whatever you bound architect to (e.g. `MiniMax-M3`), without affecting other projects. Edit your profile and re-run `sync_settings.py` to re-sync.
+**Project-local copies win** (pi-subagents' load order: project before global), so `@coding-architect` in a project will use whatever you bound `coding-architect` to.
+
+## Adding a new role group
+
+1. Create `role-packs/<group>/<role>.md` for each role in the new group. Frontmatter must include `name: <group>-<role>` (hyphen-namespaced).
+2. Add the group to `workflow.role_groups` in your profile.
+3. Add bindings for the new full role names in `bindings:`.
+4. Run `python3 scripts/sync_settings.py`.
+
+See [references/migration-from-rust-agent-workflow.md](references/migration-from-rust-agent-workflow.md) for the planned future groups (video, research, design, music).
 
 ## Building from source
 
 ```bash
-cd pi-agent-workflow
+cd pi-rolecast
 npm install
 npm run build        # tsc → dist/
-npm test             # extension smoke test (6 tests)
+npm test             # extension smoke test
 ```
 
-The `dist/` directory is gitignored; the npm tarball includes the prebuilt output. To install the local build into Pi:
-
-```bash
-pi install /Volumes/TBU/Workspace/Skills/pi-agent-workflow
-```
+The `dist/` directory is gitignored; the npm tarball includes the prebuilt output.
 
 ## Reference docs
 
 - [Profile schema](references/profile-schema.md) — full YAML spec, every field, every validation rule.
 - [Registry resolution](references/registry-resolution.md) — alias → model + channel algorithm, override layers, status semantics.
+- [Dispatch model semantics](references/dispatch-model-semantics.md) — `@handle` mention vs `Agent` tool vs plain text; why `provider/modelId` is required.
 - [Gate runner usage](references/gate-runner-usage.md) — CLI, exit codes, escalation, logs.
 - [Scaffolder usage](references/scaffolder-usage.md) — `init` / `diff` / `validate`, auto-detect, templates.
-- [Migration from rust-agent-workflow](references/migration-from-rust-agent-workflow.md) — old → new role map and manual steps.
+- [Sync settings usage](references/sync-settings-usage.md) — how profile bindings reach pi-subagents dispatch.
+- [Migration from rust-agent-workflow](references/migration-from-rust-agent-workflow.md) — v0.1.x → v0.2.0 upgrade path.
 
 ## Related projects
 
-- **[@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)** — concurrent sub-agent execution with live monitoring. pi-agent-workflow owns the *profile + gate + scaffolder* layer; pi-subagents owns *concurrent AgentSession dispatch*. They compose: bind a profile to a pi-subagents run and you get parallel role execution with the gate runner as the safety net.
-- **[Michaelliv/pi-dynamic-workflows](https://github.com/Michaelliv/pi-dynamic-workflows)** — dynamic workflow composition (different concern: workflows-as-data rather than profile-driven role bindings). Useful if your project needs to assemble steps at runtime instead of from a checked-in profile.
+- **[@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)** — concurrent sub-agent execution with live monitoring. pi-rolecast owns the *profile + gate + scaffolder* layer; pi-subagents owns *concurrent AgentSession dispatch*. They compose.
+- **[Michaelliv/pi-dynamic-workflows](https://github.com/Michaelliv/pi-dynamic-workflows)** — dynamic workflow composition (different concern: workflows-as-data rather than profile-driven role bindings).
 
-If you maintain a Pi extension registry or community compat list, PRs adding pi-agent-workflow are welcome.
+## License
 
-## Spec and plan
-
-Design history preserved in the original `rootazero/Skills` repo (kept for the record of how this framework was designed and built):
-
-- Spec: [rootazero/Skills :: docs/superpowers/specs/2026-10-03-pi-agent-workflow-design.md](https://github.com/rootazero/Skills/blob/main/docs/superpowers/specs/2026-10-03-pi-agent-workflow-design.md)
-- Plan: [rootazero/Skills :: docs/superpowers/plans/2026-10-03-pi-agent-workflow.md](https://github.com/rootazero/Skills/blob/main/docs/superpowers/plans/2026-10-03-pi-agent-workflow.md)
+MIT.

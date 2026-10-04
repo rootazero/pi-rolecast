@@ -1,4 +1,4 @@
-# Scaffolder usage
+# Scaffolder usage (pi-rolecast v0.2.0)
 
 ## init
 
@@ -8,7 +8,7 @@ python3 $SKILL_ROOT/scripts/scaffolder.py init [--template LANG] [--blank] [--dr
 
 Auto-detects language from project files (Cargo.toml → rust, pyproject.toml → python, package.json+tsconfig.json → typescript, go.mod → go). Multi-language projects print a list; pass `--template` to pick.
 
-Templates ship under `<framework>/templates/{rust,typescript,python,go,blank}.yaml`.
+Templates ship under `<framework>/templates/{rust,typescript,python,go,blank}.yaml`. The generated profile lands at `<project>/.pi/rolecast.yaml` and includes `workflow.role_groups: [coding]` by default.
 
 ## validate
 
@@ -16,7 +16,7 @@ Templates ship under `<framework>/templates/{rust,typescript,python,go,blank}.ya
 python3 $SKILL_ROOT/scripts/scaffolder.py validate --profile <path>
 ```
 
-Delegates to `profile_loader.load_profile`. Exit code 0 = valid, non-zero = error.
+Default profile path: `.pi/rolecast.yaml`. Legacy `.pi/agent-workflow.yaml` is also accepted. Delegates to `profile_loader.load_profile`. Exit code 0 = valid, non-zero = error.
 
 ## diff
 

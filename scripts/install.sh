@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# pi-rolecast installer. v0.2.0+: walks role-packs/<group>/<role>.md instead
+# of the legacy agents/ directory.
 set -euo pipefail
 PREFIX="${HOME}/.pi/agent"
 FRAMEWORK_ROOT=""
@@ -19,27 +21,32 @@ if [[ -z "$FRAMEWORK_ROOT" ]]; then
   FRAMEWORK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
-CORE_ROLES=(orchestrator architect planner implementer tester reviewer mapper profiler auditor canary docs)
 if [[ -n "$DRY_RUN" ]]; then
   echo DRY RUN
-  for role in "${CORE_ROLES[@]}"; do
+  while IFS= read -r md; do
+    role=$(basename "$md" .md)
     echo "would create $PREFIX/agents/$role.md"
-  done
+  done < <(find "$FRAMEWORK_ROOT/role-packs" -type f -name '*.md' 2>/dev/null | sort)
   exit 0
 fi
 mkdir -p "$PREFIX"
 
-# Framework symlink
-if [[ ! -e "$PREFIX/pi-agent-workflow" ]]; then
-  ln -s "$FRAMEWORK_ROOT" "$PREFIX/pi-agent-workflow"
-  echo "linked $PREFIX/pi-agent-workflow to $FRAMEWORK_ROOT"
+# Framework symlink (new pi-rolecast name; keep removing the legacy name).
+if [[ ! -e "$PREFIX/pi-rolecast" ]]; then
+  ln -s "$FRAMEWORK_ROOT" "$PREFIX/pi-rolecast"
+  echo "linked $PREFIX/pi-rolecast to $FRAMEWORK_ROOT"
 fi
+if [[ -e "$PREFIX/pi-agent-workflow" ]]; then
+  echo "removing legacy $PREFIX/pi-agent-workflow symlink"
+  rm -f "$PREFIX/pi-agent-workflow"
+fi
+
+# Remove legacy v0.1.x layout: ~/.pi/agent/agent-<role>/SKILL.md.
 if [[ -z "$KEEP_OLD" ]]; then
   removed=0
-  for role in "${CORE_ROLES[@]}"; do
-    old_dir="$PREFIX/agent-$role"
-    if [[ -d "$old_dir" ]]; then
-      rm -rf "$old_dir"
+  for d in "$PREFIX"/agent-*; do
+    if [[ -d "$d" ]]; then
+      rm -rf "$d"
       removed=$((removed + 1))
     fi
   done
@@ -47,21 +54,23 @@ if [[ -z "$KEEP_OLD" ]]; then
     echo "removed $removed old agent-role directories"
   fi
 fi
+
+# Global role symlinks for every role-packs/<group>/<role>.md.
 agents_dir="$PREFIX/agents"
 mkdir -p "$agents_dir"
 linked=0
-for role in "${CORE_ROLES[@]}"; do
+while IFS= read -r md; do
+  role=$(basename "$md" .md)
   link_path="$agents_dir/$role.md"
-  target="$FRAMEWORK_ROOT/agents/$role.md"
   if [[ -L "$link_path" ]]; then
     rm -f "$link_path"
   fi
-  ln -s "$target" "$link_path"
+  ln -s "$md" "$link_path"
   linked=$((linked + 1))
-done
-echo "linked $linked role agents"
+done < <(find "$FRAMEWORK_ROOT/role-packs" -type f -name '*.md' 2>/dev/null | sort)
+echo "linked $linked role agents from role-packs/"
 
-# Check pi-subagents dependency (required for role dispatch to actually work)
+# Warn if pi-subagents is missing — required for actual role dispatch.
 SETTINGS_JSON="$PREFIX/settings.json"
 if [[ -f "$SETTINGS_JSON" ]] && python3 -c "
 import json, sys
@@ -79,6 +88,7 @@ except Exception:
   echo "  Role symlinks are installed but dispatch won't work without pi-subagents."
   echo " Install with:  pi install npm:@tintinweb/pi-subagents"
 fi
+
 if [[ -n "$NO_PIP" ]]; then
   echo "skipping pip install (--no-pip)"
 elif python3 -c "import yaml" 2>/dev/null; then
@@ -88,11 +98,20 @@ else
 fi
 
 echo "install complete"
+
 # Sync profile bindings to pi dispatch config + project-local agent files
-if [[ -f "./.pi/agent-workflow.yaml" ]]; then
-  echo "found .pi/agent-workflow.yaml in cwd; syncing to settings.json + .pi/agents/"
+# if a profile is found in cwd (new filename preferred, legacy accepted).
+profile_path=""
+if [[ -f "./.pi/rolecast.yaml" ]]; then
+  profile_path="./.pi/rolecast.yaml"
+elif [[ -f "./.pi/agent-workflow.yaml" ]]; then
+  profile_path="./.pi/agent-workflow.yaml"
+  echo "warning: .pi/agent-workflow.yaml is the legacy v0.1.x filename; rename to .pi/rolecast.yaml"
+fi
+if [[ -n "$profile_path" ]]; then
+  echo "found $profile_path in cwd; syncing to settings.json + .pi/agents/"
   python3 "$FRAMEWORK_ROOT/scripts/sync_settings.py" \
-    --profile "./.pi/agent-workflow.yaml" \
+    --profile "$profile_path" \
     --framework-root "$FRAMEWORK_ROOT" || \
     echo "warning: sync_settings.py failed (run it manually)"
 else

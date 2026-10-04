@@ -106,7 +106,7 @@ def test_scaffolder_init_dry_run_does_not_write(tmp_path):
     )
     assert result.returncode == 0
     assert "would create" in result.stdout.lower()
-    assert not (tmp_path / ".pi" / "agent-workflow.yaml").exists()
+    assert not (tmp_path / ".pi" / "rolecast.yaml").exists()
 
 
 def test_scaffolder_init_uses_template_rust(tmp_path):
@@ -118,7 +118,7 @@ def test_scaffolder_init_uses_template_rust(tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    written = (tmp_path / ".pi" / "agent-workflow.yaml").read_text()
+    written = (tmp_path / ".pi" / "rolecast.yaml").read_text()
     assert "cargo check" in written
     assert "bindings" in written
 
@@ -133,7 +133,7 @@ def test_scaffolder_init_uses_template_typescript(tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == 0
-    written = (tmp_path / ".pi" / "agent-workflow.yaml").read_text()
+    written = (tmp_path / ".pi" / "rolecast.yaml").read_text()
     assert "tsc" in written
 
 
@@ -145,7 +145,7 @@ def test_scaffolder_init_blank_template(tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == 0
-    written = (tmp_path / ".pi" / "agent-workflow.yaml").read_text()
+    written = (tmp_path / ".pi" / "rolecast.yaml").read_text()
     assert "bindings: {}" in written or "bindings: {}" in written.replace("\n", "")
 
 
@@ -153,7 +153,7 @@ def test_scaffolder_init_refuses_existing_without_force(tmp_path):
     framework_root = Path(__file__).resolve().parents[2]
     touch(tmp_path / "Cargo.toml")
     (tmp_path / ".pi").mkdir()
-    (tmp_path / ".pi" / "agent-workflow.yaml").write_text("framework_version: 0.1.0\n")
+    (tmp_path / ".pi" / "rolecast.yaml").write_text("framework_version: 0.2.0\n")
     result = subprocess.run(
         [sys.executable, str(SCAFFOLDER), "init", "--template", "rust",
          "--project-root", str(tmp_path), "--framework-root", str(framework_root)],
@@ -167,25 +167,27 @@ def test_scaffolder_init_force_overwrites(tmp_path):
     framework_root = Path(__file__).resolve().parents[2]
     touch(tmp_path / "Cargo.toml")
     (tmp_path / ".pi").mkdir()
-    (tmp_path / ".pi" / "agent-workflow.yaml").write_text("old: true\n")
+    (tmp_path / ".pi" / "rolecast.yaml").write_text("old: true\n")
     result = subprocess.run(
         [sys.executable, str(SCAFFOLDER), "init", "--template", "rust", "--force",
          "--project-root", str(tmp_path), "--framework-root", str(framework_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0
-    assert "old: true" not in (tmp_path / ".pi" / "agent-workflow.yaml").read_text()
+    assert "old: true" not in (tmp_path / ".pi" / "rolecast.yaml").read_text()
 
 
 def test_scaffolder_validate_accepts_valid_profile(tmp_path):
     framework_root = Path(__file__).resolve().parents[2]
     profile_yaml = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: x
     description: x
+    workflow:
+      role_groups: [coding]
     gates: {}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """
     p = tmp_path / "agent-workflow.yaml"
     p.write_text(profile_yaml)
@@ -201,9 +203,11 @@ def test_scaffolder_validate_accepts_valid_profile(tmp_path):
 def test_scaffolder_validate_rejects_unknown_binding_key(tmp_path):
     framework_root = Path(__file__).resolve().parents[2]
     profile_yaml = """
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: x
     description: x
+    workflow:
+      role_groups: [coding]
     gates: {}
     bindings:
       not-a-role: {alias: opus-thinking-medium, channels: [official]}
@@ -224,12 +228,14 @@ def test_scaffolder_diff_reports_missing_fields(tmp_path):
     # Profile with framework_version=0.1.0 but missing fields added in 0.2.0.
     p = tmp_path / "agent-workflow.yaml"
     p.write_text("""
-    framework_version: 0.1.0
+    framework_version: 0.2.0
     name: x
     description: x
+    workflow:
+      role_groups: [coding]
     gates: {}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """)
     # Override framework_version to 0.2.0 in a fake schema registry for the test.
     # Simpler: write a stub framework with version 0.2.0 metadata.
@@ -257,9 +263,11 @@ def test_scaffolder_diff_requires_framework_version(tmp_path):
     p.write_text("""
     name: x
     description: x
+    workflow:
+      role_groups: [coding]
     gates: {}
     bindings:
-      architect: {alias: opus-thinking-medium, channels: [official]}
+      coding-architect: {alias: opus-thinking-medium, channels: [official]}
     """)
     # Review Focus #5: profile without framework_version must error in diff.
     result = subprocess.run(

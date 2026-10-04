@@ -1,5 +1,6 @@
 ---
-name: implementer
+name: coding-implementer
+category: coding
 description: Execute mechanical multi-file edits. Output is verifiable via project gates.
 model: deepseek-flash
 thinking: low
@@ -29,3 +30,4 @@ You execute the plan. You do not redesign.
 ## Output category
 
 Verifiable. Gate-runner enforces.
+

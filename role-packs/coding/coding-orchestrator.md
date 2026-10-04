@@ -1,5 +1,6 @@
 ---
-name: orchestrator
+name: coding-orchestrator
+category: coding
 description: Coordinate the multi-agent workflow; dispatch to roles based on user intent.
 model: deepseek-flash
 thinking: high
@@ -24,3 +25,4 @@ Do not assume Rust, TypeScript, Python, or any specific toolchain. Surface toolc
 ## Always-on
 
 This role is not triggered by a phrase. It runs whenever the user invokes the framework.
+

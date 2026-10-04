@@ -1,5 +1,6 @@
 ---
-name: mapper
+name: coding-mapper
+category: coding
 description: Build a structural index / dependency graph for the project.
 model: deepseek-flash
 thinking: medium
@@ -27,3 +28,4 @@ You map, you don't change.
 ## Output category
 
 Verifiable — the map can be checked by reading the file.
+

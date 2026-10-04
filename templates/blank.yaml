@@ -1,7 +1,12 @@
-framework_version: 0.1.0
+framework_version: 0.2.0
 name: my-project
 description: |
   (describe your workflow here)
+
+workflow:
+  # Enable groups as the framework ships them. Example for future video group:
+  #   role_groups: [coding, video]
+  role_groups: []
 
 gates: {}
 

@@ -1,5 +1,5 @@
 /**
- * pi-agent-workflow — Pi extension entrypoint.
+ * pi-rolecast — Pi extension entrypoint.
  *
  * Bridges the framework's Python CLI (scripts/) to Pi as model-callable
  * tools and slash commands. The Python scripts remain the source of truth;
@@ -13,10 +13,10 @@
  *     - gate_run            wraps `python3 scripts/gate_runner.py`
  *
  *   Slash commands:
- *     - /workflow-init   scaffold a project profile
+ *     - /workflow-init      scaffold a project profile
  *     - /workflow-validate  validate the project profile
- *     - /workflow-diff  check for framework schema drift
- *     - /workflow-run    run a gate phase
+ *     - /workflow-diff      check for framework schema drift
+ *     - /workflow-run       run a gate phase
  *
  *   Event hooks:
  *     - session_start: detect missing profile and notify
@@ -42,11 +42,22 @@ const FRAMEWORK_ROOT = resolve(__dirname, "..");
 const SCRIPTS = join(FRAMEWORK_ROOT, "scripts");
 const PYTHON = process.env.PYTHON ?? "python3";
 
-const PROFILE_FILENAME = "agent-workflow.yaml";
+// v0.2.0: project profile is .pi/rolecast.yaml. Legacy .pi/agent-workflow.yaml
+// is still recognised for one release as a deprecation aid.
+const PROFILE_FILENAMES = ["rolecast.yaml", "agent-workflow.yaml"];
 const PROFILE_DIR = ".pi";
 
 function projectProfile(cwd: string): string {
-	return join(cwd, PROFILE_DIR, PROFILE_FILENAME);
+	return join(cwd, PROFILE_DIR, PROFILE_FILENAMES[0]);
+}
+
+function findProjectProfile(cwd: string): string | null {
+	const dir = join(cwd, PROFILE_DIR);
+	for (const name of PROFILE_FILENAMES) {
+		const p = join(dir, name);
+		if (existsSync(p)) return p;
+	}
+	return null;
 }
 
 // ---- Subprocess helper ----
@@ -104,14 +115,14 @@ const scaffolderInitTool = defineTool({
 	name: "scaffolder_init",
 	label: "Scaffolder Init",
 	description: [
-		"Bootstrap a pi-agent-workflow profile in the current project.",
+		"Bootstrap a pi-rolecast profile in the current project.",
 		"Auto-detects the project's language (Cargo.toml → rust, pyproject.toml → python,",
 		"package.json + tsconfig.json → typescript, go.mod → go) and writes",
-		".pi/agent-workflow.yaml from the matching template. Idempotent: refuses to overwrite",
+		".pi/rolecast.yaml from the matching template. Idempotent: refuses to overwrite",
 		"an existing profile unless --force is passed.",
 	].join(" "),
 	promptSnippet:
-		"Bootstrap .pi/agent-workflow.yaml in the current project by auto-detecting the language and pre-filling from a template.",
+		"Bootstrap .pi/rolecast.yaml in the current project by auto-detecting the language and pre-filling from a template.",
 	promptGuidelines: [
 		"Use scaffolder_init when the user asks to set up a workflow profile, scaffold a project, or wants the framework to write its config file.",
 		"Do NOT use this to validate or diff an existing profile — use scaffolder_validate / scaffolder_diff for that.",
@@ -135,7 +146,7 @@ const scaffolderInitTool = defineTool({
 		),
 		force: Type.Optional(
 			Type.Boolean({
-				description: "Overwrite an existing .pi/agent-workflow.yaml if present. Default: refuse.",
+				description: "Overwrite an existing .pi/rolecast.yaml if present. Default: refuse.",
 			}),
 		),
 		dry_run: Type.Optional(
@@ -161,7 +172,7 @@ const scaffolderValidateTool = defineTool({
 	name: "scaffolder_validate",
 	label: "Scaffolder Validate",
 	description: [
-		"Validate the project's .pi/agent-workflow.yaml profile against the framework schema.",
+		"Validate the project's .pi/rolecast.yaml profile against the framework schema.",
 		"Checks every binding resolves to a known alias + model + channel; rejects unknown roles,",
 		"trigger collisions, missing framework_version, etc. Delegates to profile_loader.load_profile.",
 	].join(" "),
@@ -174,7 +185,7 @@ const scaffolderValidateTool = defineTool({
 		profile_path: Type.Optional(
 			Type.String({
 				description:
-					"Path to the profile YAML. Default: .pi/agent-workflow.yaml relative to the current working directory.",
+					"Path to the profile YAML. Default: .pi/rolecast.yaml relative to the current working directory.",
 			}),
 		),
 	}),
@@ -201,14 +212,14 @@ const scaffolderDiffTool = defineTool({
 	].join(" "),
 	promptSnippet: "Check whether the project profile is out of date with the current framework schema.",
 	promptGuidelines: [
-		"Use scaffolder_diff after upgrading pi-agent-workflow to see what changed in the schema.",
+		"Use scaffolder_diff after upgrading pi-rolecast to see what changed in the schema.",
 		"The tool does NOT modify the profile — apply any updates manually.",
 	],
 	parameters: Type.Object({
 		profile_path: Type.Optional(
 			Type.String({
 				description:
-					"Path to the profile YAML. Default: .pi/agent-workflow.yaml relative to the current working directory.",
+					"Path to the profile YAML. Default: .pi/rolecast.yaml relative to the current working directory.",
 			}),
 		),
 	}),
@@ -232,7 +243,7 @@ const gateRunTool = defineTool({
 		"Execute the project's gate-runner. Runs declared gate phases (compile / lint / test etc.)",
 		"in order, with per-phase retry + escalation per the profile.",
 		"Exit code 0 = all phases pass; 1 = a phase failed after retries; 2 = config error.",
-		"Logs land under <project>/.pi/agent-workflow-logs/<timestamp>/.",
+		"Logs land under <project>/.pi/rolecast-logs/<timestamp>/.",
 	].join(" "),
 	promptSnippet:
 		"Run the project's gate-runner to verify compilation / lint / tests after code changes.",
@@ -245,18 +256,17 @@ const gateRunTool = defineTool({
 		profile_path: Type.Optional(
 			Type.String({
 				description:
-					"Path to the profile YAML. Default: .pi/agent-workflow.yaml relative to the current working directory.",
+					"Path to the profile YAML. Default: .pi/rolecast.yaml relative to the current working directory.",
 			}),
 		),
 		phase: Type.Optional(
 			Type.String({
-				description:
-					"Phase name to run (e.g. 'compile', 'lint', 'test'). Omit to run all phases in declared order.",
+				description: "Phase name to run (e.g. 'compile', 'lint', 'test'). Omit to run all phases in declared order.",
 			}),
 		),
 		log_dir: Type.Optional(
 			Type.String({
-				description: "Override the default log directory (.pi/agent-workflow-logs/).",
+				description: "Override the default log directory (.pi/rolecast-logs/).",
 			}),
 		),
 	}),
@@ -287,7 +297,7 @@ function profileStatus(cwd: string): { exists: boolean; path: string } {
 
 // ---- Extension factory ----
 
-export default function piAgentWorkflowExtension(pi: ExtensionAPI): void {
+export default function piRolecastExtension(pi: ExtensionAPI): void {
 	// Register all four tools so the model can call them.
 	pi.registerTool(scaffolderInitTool);
 	pi.registerTool(scaffolderValidateTool);
@@ -296,7 +306,7 @@ export default function piAgentWorkflowExtension(pi: ExtensionAPI): void {
 
 	// Slash commands mirror the tools for direct user invocation.
 	pi.registerCommand("workflow-init", {
-		description: "Bootstrap .pi/agent-workflow.yaml in the current project.",
+		description: "Bootstrap .pi/rolecast.yaml in the current project.",
 		handler: async (args, ctx) => {
 			const parts = args.trim().split(/\s+/).filter(Boolean);
 			const pyArgs = ["init", ...parts];
@@ -336,7 +346,7 @@ export default function piAgentWorkflowExtension(pi: ExtensionAPI): void {
 		const status = profileStatus((ctx as unknown as SessionCtx).cwd);
 		if (!status.exists) {
 			ctx.ui.notify(
-				`pi-agent-workflow: no profile found at ${status.path}. Run /workflow-init to bootstrap one.`,
+				`pi-rolecast: no profile found at ${status.path}. Run /workflow-init to bootstrap one.`,
 				"info",
 			);
 		}

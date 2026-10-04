@@ -1,5 +1,6 @@
 ---
-name: profiler
+name: coding-profiler
+category: coding
 description: Diagnose performance issues from profiles / traces / benchmarks.
 model: deepseek-flash
 thinking: medium
@@ -27,3 +28,4 @@ You diagnose, you don't optimise. Optimisation without diagnosis is guessing.
 ## Output category
 
 Verifiable (re-runnable) — your hypotheses can be tested by running the same workload.
+

@@ -1,13 +1,27 @@
-# pi-agent-workflow/scripts/profile_loader.py
-"""Load + validate a project-local agent-workflow profile.
+#!/usr/bin/env python3
+"""pi-rolecast/scripts/profile_loader.py
 
-Single source of truth for spec §5.3 validation rules. Consumed by:
+Load + validate a project-local rolecast profile.
+
+Single source of truth for the profile schema. Consumed by:
 - scripts/gate_runner.py (load_profile before phase execution)
 - scripts/scaffolder.py validate (load_profile)
 - scripts/scaffolder.py init (load_profile after writing new profile)
+- scripts/sync_settings.py (load_profile + available_roles for dispatch)
+- scripts/install.sh (indirectly via the Python helpers above)
 
-Resolution rules (alias → model + channel) live in this module too —
-see load_resolved_bindings in task 4 / 5.
+v0.2.0 breaking changes:
+  * Roles are now grouped (role-packs/<group>/<role>.md). Profile bindings
+    use full names like `coding-architect` (hyphen-namespaced so pi-subagents'
+    `@\\w-` mention regex accepts them).
+  * Profile gains a top-level `workflow.role_groups: [list]` field that
+    declares which groups are enabled. Only roles inside enabled groups
+    can be bound.
+  * Project-local profile filename changed from `.pi/agent-workflow.yaml`
+    to `.pi/rolecast.yaml`. The legacy name is still recognised for one
+    release as a deprecation aid.
+
+Resolution rules (alias → model + channel) live in this module too.
 """
 from __future__ import annotations
 import re
@@ -17,12 +31,38 @@ from typing import Any, Iterable
 
 import yaml
 
-CORE_ROLES = frozenset({
+# Legacy constant retained only for migration messages. v0.2.0+ roles are
+# discovered dynamically from role-packs/<group>/<role>.md.
+LEGACY_CORE_ROLES = frozenset({
     "orchestrator", "architect", "planner", "implementer", "tester",
     "reviewer", "mapper", "profiler", "auditor", "canary", "docs",
 })
 
-DEFAULT_FRAMEWORK_VERSION = "0.1.0"
+# Default role group shipped with the framework. Users can add more by
+# dropping a directory under role-packs/.
+DEFAULT_GROUP = "coding"
+
+# Default triggers for the coding group. Keys are the full role name
+# (`<group>-<role>`); values are the trigger phrases that route to that
+# role via the orchestrator.
+DEFAULT_TRIGGERS: dict[str, list[str]] = {
+    "coding-architect":      ["design", "architect", "trait", "API design", "system design"],
+    "coding-planner":        ["plan", "plan this change", "break this down"],
+    "coding-implementer":    ["implement", "code", "do it", "make this change"],
+    "coding-tester":         ["write tests", "test this", "add coverage"],
+    "coding-reviewer":       ["review this diff", "review", "check this"],
+    "coding-mapper":         ["map", "repo map", "what's in this repo"],
+    "coding-profiler":       ["profile this", "this is slow", "why is X slow"],
+    "coding-auditor":        ["audit", "audit security", "check for vulnerabilities",
+                              "what could go wrong"],
+    "coding-canary":         ["is the relay real", "which group answered", "canary check"],
+    "coding-docs":           ["write README", "document this", "user-facing copy",
+                              "frontend"],
+    # coding-orchestrator is always-on, no phrase triggers
+}
+
+
+DEFAULT_FRAMEWORK_VERSION = "0.2.0"
 
 
 class ProfileError(ValueError):
@@ -70,10 +110,27 @@ class Binding:
 
 
 @dataclass
+class WorkflowConfig:
+    """Top-level `workflow:` block of a profile."""
+    role_groups: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Escalation:
     max_attempts: int = 2
     on_permanent_failure: str = "stop"   # stop | continue
     preserve_logs: bool = True
+
+
+@dataclass
+class RoleDef:
+    """A role discovered from role-packs/<group>/<role>.md."""
+    full_name: str           # e.g. "coding-architect"
+    group: str               # e.g. "coding"
+    role: str                # e.g. "architect" (the basename)
+    description: str = ""
+    triggers: list[str] = field(default_factory=list)
+    file_path: Path | None = None
 
 
 @dataclass
@@ -87,11 +144,13 @@ class Profile:
     escalation: Escalation
     trigger_overrides: dict[str, dict]
     custom_roles: list[CustomRole]
-    resolved_bindings: dict[str, ResolvedBinding] = field(default_factory=dict)  # NEW
+    workflow: WorkflowConfig
+    resolved_bindings: dict[str, ResolvedBinding] = field(default_factory=dict)
 
     @property
-    def core_role_set(self) -> set[str]:
-        return set(CORE_ROLES)
+    def enabled_role_names(self) -> set[str]:
+        """All role names available for binding under the enabled groups."""
+        return {b for b in self.bindings}
 
     @property
     def custom_role_names(self) -> set[str]:
@@ -99,8 +158,92 @@ class Profile:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Role discovery from role-packs/<group>/<role>.md
+# ─────────────────────────────────────────────────────────────────────
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+_FM_FIELD_RE = re.compile(r"^(\w+):\s*(.*)$", re.MULTILINE)
+
+
+def _parse_frontmatter(text: str) -> dict[str, str]:
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}
+    out: dict[str, str] = {}
+    for ln in m.group(1).splitlines():
+        m2 = _FM_FIELD_RE.match(ln)
+        if m2:
+            out[m2.group(1)] = m2.group(2).strip()
+    return out
+
+
+def discover_role_packs(framework_root: str | Path) -> dict[str, list[RoleDef]]:
+    """Walk role-packs/<group>/*.md and return {group_name: [RoleDef...]}."""
+    root = Path(framework_root) / "role-packs"
+    if not root.is_dir():
+        return {}
+    out: dict[str, list[RoleDef]] = {}
+    for group_dir in sorted(root.iterdir()):
+        if not group_dir.is_dir():
+            continue
+        group = group_dir.name
+        roles: list[RoleDef] = []
+        for md in sorted(group_dir.glob("*.md")):
+            role = md.stem
+            # Strip optional `<group>-` prefix from filename so users can
+            # name files either `architect.md` or `coding-architect.md`.
+            if role.startswith(f"{group}-"):
+                role = role[len(group) + 1:]
+            fm = _parse_frontmatter(md.read_text())
+            full_name = fm.get("name", "").strip() or f"{group}-{role}"
+            desc = fm.get("description", "").strip()
+            roles.append(RoleDef(
+                full_name=full_name,
+                group=group,
+                role=role,
+                description=desc,
+                file_path=md,
+            ))
+        if roles:
+            out[group] = roles
+    return out
+
+
+def available_roles(framework_root: str | Path,
+                    groups: Iterable[str] | None = None) -> dict[str, RoleDef]:
+    """Return {full_role_name: RoleDef} for the requested groups (or all
+    groups if groups is None). The full role name format is
+    `<group>-<role>` (hyphen-namespaced)."""
+    packs = discover_role_packs(framework_root)
+    out: dict[str, RoleDef] = {}
+    target_groups = list(groups) if groups is not None else list(packs.keys())
+    for g in target_groups:
+        for rd in packs.get(g, []):
+            out[rd.full_name] = rd
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Loader entrypoint
 # ─────────────────────────────────────────────────────────────────────
+
+# v0.2.0 accepts both .pi/rolecast.yaml (new) and .pi/agent-workflow.yaml
+# (legacy). The legacy form prints a deprecation hint but still loads.
+LEGACY_PROFILE_FILENAMES = ("agent-workflow.yaml",)
+
+
+def find_profile(cwd: str | Path = ".") -> Path | None:
+    """Return the first existing profile in cwd, preferring the new name."""
+    p = Path(cwd)
+    new = p / ".pi" / "rolecast.yaml"
+    if new.is_file():
+        return new
+    for legacy in LEGACY_PROFILE_FILENAMES:
+        cand = p / ".pi" / legacy
+        if cand.is_file():
+            return cand
+    return None
+
 
 def load_profile(path: str | Path, *, framework_root: str | Path | None = None) -> Profile:
     p = Path(path)
@@ -109,14 +252,14 @@ def load_profile(path: str | Path, *, framework_root: str | Path | None = None) 
     raw = yaml.safe_load(p.read_text())
     if not isinstance(raw, dict):
         raise ProfileError(f"profile {p} is not a YAML mapping")
-    profile = parse_profile(raw)
     root = Path(framework_root) if framework_root else Path(__file__).resolve().parent.parent
+    profile = parse_profile(raw, framework_root=root)
     registry = load_registry(root)
     profile.resolved_bindings = resolve_bindings(profile, registry)
     return profile
 
 
-def parse_profile(raw: dict) -> Profile:
+def parse_profile(raw: dict, *, framework_root: str | Path | None = None) -> Profile:
     # Required fields
     fv = raw.get("framework_version")
     if not fv:
@@ -132,15 +275,17 @@ def parse_profile(raw: dict) -> Profile:
     if not isinstance(gates, dict):
         raise ProfileError("profile.gates must be a mapping")
 
+    workflow = _parse_workflow(raw.get("workflow") or {})
     custom_roles = _parse_custom_roles(raw.get("custom_roles") or [])
-    allowed_roles = CORE_ROLES | {r.name for r in custom_roles}
+
+    root = Path(framework_root) if framework_root else Path(__file__).resolve().parent.parent
+    packs = available_roles(root, groups=workflow.role_groups)
+    allowed_roles = set(packs.keys()) | {r.name for r in custom_roles}
 
     bindings = _parse_bindings(raw.get("bindings") or {}, allowed_roles)
-
     trigger_overrides = raw.get("trigger_overrides") or {}
     if not isinstance(trigger_overrides, dict):
         raise ProfileError("profile.trigger_overrides must be a mapping")
-
     non_negotiables = _parse_non_negotiables(raw.get("non_negotiables") or {})
     escalation = _parse_escalation(raw.get("escalation") or {})
 
@@ -154,15 +299,28 @@ def parse_profile(raw: dict) -> Profile:
         escalation=escalation,
         trigger_overrides=trigger_overrides,
         custom_roles=custom_roles,
+        workflow=workflow,
     )
 
-    _check_trigger_collisions(profile)
+    _check_trigger_collisions(profile, packs)
     return profile
 
 
 # ─────────────────────────────────────────────────────────────────────
 # Sub-parsers
 # ─────────────────────────────────────────────────────────────────────
+
+def _parse_workflow(raw: Any) -> WorkflowConfig:
+    if not isinstance(raw, dict):
+        raise ProfileError("profile.workflow must be a mapping")
+    rg = raw.get("role_groups", [])
+    if not isinstance(rg, list):
+        raise ProfileError("workflow.role_groups must be a list of strings")
+    bad = [g for g in rg if not isinstance(g, str) or not g]
+    if bad:
+        raise ProfileError(f"workflow.role_groups has non-string entries: {bad}")
+    return WorkflowConfig(role_groups=list(rg))
+
 
 def _parse_custom_roles(items: Iterable[Any]) -> list[CustomRole]:
     out: list[CustomRole] = []
@@ -177,8 +335,6 @@ def _parse_custom_roles(items: Iterable[Any]) -> list[CustomRole]:
         if item["name"] in seen:
             raise ProfileError(f"custom_roles[{i}].name duplicates {item['name']}")
         seen.add(item["name"])
-        if item["name"] in CORE_ROLES:
-            raise ProfileError(f"custom_role name '{item['name']}' collides with core role")
         if not isinstance(item["default_channels"], list) or not item["default_channels"]:
             raise ProfileError(f"custom_roles[{i}].default_channels must be non-empty list")
         if not isinstance(item["triggers"], list):
@@ -200,9 +356,14 @@ def _parse_bindings(raw: dict, allowed_roles: set[str]) -> dict[str, Binding]:
     out: dict[str, Binding] = {}
     for role, b in raw.items():
         if role not in allowed_roles:
+            hint = ""
+            if role in LEGACY_CORE_ROLES:
+                hint = (f" (hint: '{role}' is a legacy coding role name; "
+                        f"use 'coding-{role}' in v0.2.0+, and add "
+                        f"`workflow.role_groups: [coding]` to your profile)")
             raise ProfileError(
-                f"bindings key '{role}' is not a core role (spec §5.3 rule 1) "
-                f"and is not declared in custom_roles"
+                f"bindings key '{role}' is not in any enabled role group "
+                f"and is not declared in custom_roles{hint}"
             )
         if not isinstance(b, dict):
             raise ProfileError(f"bindings.{role} must be a mapping")
@@ -239,37 +400,30 @@ def _parse_escalation(raw: dict) -> Escalation:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Trigger collision check (rule 5)
+# Trigger collision check
 # ─────────────────────────────────────────────────────────────────────
 
-# Spec §7.1 default triggers shipped with framework agents.
-DEFAULT_TRIGGERS: dict[str, list[str]] = {
-    "architect":      ["design", "architect", "trait"],
-    "planner":        ["plan", "plan this change"],
-    "implementer":    ["implement", "code", "do it"],
-    "tester":         ["write tests", "test this"],
-    "reviewer":       ["review this diff", "review"],
-    "mapper":         ["map", "repo map"],
-    "profiler":       ["profile this", "this is slow"],
-    "auditor":        ["audit", "audit security"],
-    "canary":         ["is the relay real", "which group answered"],
-    "docs":           ["write README", "document this"],
-    # orchestrator is always-on, no phrase triggers
-}
-
-
-def _check_trigger_collisions(profile: Profile) -> None:
+def _check_trigger_collisions(profile: Profile,
+                              packs: dict[str, RoleDef]) -> None:
     phrase_to_roles: dict[str, set[str]] = {}
-    for role, phrases in DEFAULT_TRIGGERS.items():
+    # Default triggers: ones we hardcode for the coding group + any custom
+    # role triggers. We use the full prefixed name so collisions stay scoped.
+    for full_name, phrases in DEFAULT_TRIGGERS.items():
         for p in phrases:
-            phrase_to_roles.setdefault(p.lower(), set()).add(role)
+            phrase_to_roles.setdefault(p.lower(), set()).add(full_name)
+    # Per-role triggers declared in role-packs/<group>/<role>.md frontmatter
+    # (rare today but reserved for future-proofing).
+    for rd in packs.values():
+        for p in rd.triggers:
+            phrase_to_roles.setdefault(p.lower(), set()).add(rd.full_name)
     for phrase, override in profile.trigger_overrides.items():
         target = override.get("role") if isinstance(override, dict) else None
         if not target:
             raise ProfileError(
                 f"trigger_overrides['{phrase}'] must map to {{role: <role>}}"
             )
-        if target not in profile.core_role_set and target not in profile.custom_role_names:
+        if (target not in profile.bindings
+                and target not in profile.custom_role_names):
             raise ProfileError(
                 f"trigger_overrides['{phrase}'] targets unknown role '{target}'"
             )
@@ -285,11 +439,11 @@ def _check_trigger_collisions(profile: Profile) -> None:
     }
     if collisions:
         msg = "\n".join(f"  '{p}' -> {r}" for p, r in collisions.items())
-        raise ProfileError(f"trigger phrase collision (spec §5.3 rule 5):\n{msg}")
+        raise ProfileError(f"trigger phrase collision:\n{msg}")
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Registry + alias resolution (spec §6, rule 2)
+# Registry + alias resolution
 # ─────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -299,7 +453,7 @@ class Model:
     capabilities: dict
     channels: list[dict]
     cost_tier: str
-    status: str   # stable | deprecated | experimental | withdrawn
+    status: str
 
 
 @dataclass
@@ -327,7 +481,7 @@ class ResolvedBinding:
     channel_id: str
     trust: str
     warning: str | None = None
-    via_fallback: bool = False  # reserved for dispatch-time fallback (spec §6.4 step 7)
+    via_fallback: bool = False
 
 
 class Registry:
@@ -359,8 +513,6 @@ class Registry:
             raise ProfileError(
                 f"alias '{name}' resolves to withdrawn model '{m.id}'"
             )
-        # Channel selection is profile-binding's job (see task 5).
-        # For pure registry resolution, surface preferred channel + trust.
         ch = m.channels[0]
         warning = (
             f"alias '{name}' resolves to deprecated model '{m.id}' — "
@@ -377,22 +529,16 @@ class Registry:
 
 def load_registry(framework_root: str | Path) -> Registry:
     """Build a Registry by deep-merging three layers in priority order:
-    built-in → user-global → project-local (later wins).
-
-    Project-local layer is read from cwd unless explicitly disabled —
-    pass ``include_project=False`` to skip it."""
+    built-in → user-global → project-local (later wins)."""
     root = Path(framework_root)
     builtin_models, builtin_aliases = _read_registry_pair(root / "registry")
 
-    # User global: two single files per spec §6.3 — registry-overrides.yaml and
-    # aliases-overrides.yaml, both at ~/.pi/agent-workflow/. Either may be
-    # missing; _read_registry_pair returns an empty default in that case.
     user_models, _ = _read_registry_pair(_user_global_dir() / "registry-overrides.yaml")
     _, user_aliases = _read_registry_pair(_user_global_dir() / "aliases-overrides.yaml")
 
     cwd = Path.cwd()
     proj_models, proj_aliases = _read_registry_pair(
-        cwd / ".pi" / "agent-workflow-registry.yaml",
+        cwd / ".pi" / "rolecast-registry.yaml",
         default={"models": [], "aliases": {}},
     )
 
@@ -402,12 +548,10 @@ def load_registry(framework_root: str | Path) -> Registry:
 
 
 def _user_global_dir() -> Path:
-    return Path.home() / ".pi" / "agent-workflow"
+    return Path.home() / ".pi" / "rolecast"
 
 
 def _read_registry_pair(path: Path, default: dict | None = None) -> tuple[list, dict]:
-    """Read a directory containing built_in.yaml + aliases.yaml, or a single
-    YAML file with both `models` and `aliases` keys."""
     if path.is_dir():
         builtin_p = path / "built_in.yaml"
         alias_p = path / "aliases.yaml"
@@ -421,9 +565,6 @@ def _read_registry_pair(path: Path, default: dict | None = None) -> tuple[list, 
 
 
 def _merge_models(*layers: list[dict]) -> dict[str, Model]:
-    """Spec §6.3 — per-id deep merge: an override's fields are layered atop the
-    base's fields; fields the override omits retain the base's value (e.g.
-    channels, capabilities). Models are constructed only after the merge."""
     merged_raw: dict[str, dict] = {}
     for layer in layers:
         for m in layer:
@@ -444,8 +585,6 @@ def _merge_models(*layers: list[dict]) -> dict[str, Model]:
 
 
 def _merge_aliases(*layers: dict) -> dict[str, Alias]:
-    """Spec §6.3 — per-alias-name deep merge: an override's fields are layered
-    atop the base's fields. After merge, `preferred` must be present (required)."""
     merged_raw: dict[str, dict] = {}
     for layer in layers:
         for name, a in layer.items():
@@ -475,9 +614,6 @@ def resolve_bindings(profile: Profile, registry: Registry) -> dict[str, Resolved
 
 
 def _resolve_binding(role: str, binding: Binding, registry: Registry) -> ResolvedBinding:
-    """Spec §6.4 steps 1-6 — no load-time fallback walk (per spec §6.4 step 5:
-    error immediately on channel mismatch). Dispatch-time fallback walking is
-    the gate-runner's responsibility, not the loader's."""
     try:
         primary = registry.resolve_alias(binding.alias)
     except ProfileError as e:
@@ -490,7 +626,6 @@ def _resolve_binding(role: str, binding: Binding, registry: Registry) -> Resolve
                 model_id=primary_model.id, channel_id=ch["id"],
                 trust=ch["trust"], warning=primary.warning,
             )
-    # Spec §6.4 step 5 — error immediately, do NOT walk fallback chain here.
     available = [ch["id"] for ch in primary_model.channels]
     raise ProfileError(
         f"bindings.{role}: no channel in {binding.channels} is available "

@@ -1,5 +1,6 @@
 ---
-name: auditor
+name: coding-auditor
+category: coding
 description: Audit security, permissions, and cross-agent trust boundaries.
 model: deepseek-flash
 thinking: high
@@ -27,3 +28,4 @@ You audit, you don't fix. Output a finding list; the implementer fixes.
 ## Output category
 
 Judgement. Bind to a high-reasoning model on a trusted channel.
+

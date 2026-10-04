@@ -1,20 +1,20 @@
 {
-  "name": "@rootazero/pi-agent-workflow",
-  "version": "0.1.5",
-  "description": "Language-agnostic multi-agent workflow framework as a Pi extension. Profile-driven model binding, gate-based verification, scaffolder for project bootstrap. Exposes the framework's Python CLI as Pi tools and slash commands.",
+  "name": "pi-rolecast",
+  "version": "0.2.0",
+  "description": "Multi-agent role framework for Pi. Groups of specialist agents (coding, video, etc.) bound to per-role models, dispatched via pi-subagents. Profile-driven, gate-verified, language-agnostic.",
   "type": "module",
   "license": "MIT",
   "author": {
     "name": "rootazero",
     "email": "zouguojunx@gmail.com"
   },
-  "homepage": "https://github.com/rootazero/pi-agent-workflow#readme",
+  "homepage": "https://github.com/rootazero/pi-rolecast#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rootazero/pi-agent-workflow.git"
+    "url": "git+https://github.com/rootazero/pi-rolecast.git"
   },
   "bugs": {
-    "url": "https://github.com/rootazero/pi-agent-workflow/issues"
+    "url": "https://github.com/rootazero/pi-rolecast/issues"
   },
   "publishConfig": {
     "access": "public"
@@ -28,7 +28,7 @@
     "!scripts/__pycache__/",
     "!scripts/**/__pycache__/",
     "!scripts/*.pyc",
-    "agents/",
+    "role-packs/",
     "registry/",
     "templates/",
     "examples/",
@@ -49,7 +49,8 @@
     "pi",
     "pi-extension",
     "agents",
-    "workflow",
+    "roles",
+    "rolecast",
     "multi-agent",
     "scaffolder",
     "gate-runner"

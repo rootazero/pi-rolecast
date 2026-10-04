@@ -84,7 +84,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve()
     framework_root = Path(args.framework_root).resolve()
     templates_dir = framework_root / "templates"
-    profile_path = project_root / ".pi" / "agent-workflow.yaml"
+    # v0.2.0: prefer new filename; fall back to legacy if --legacy-name is passed.
+    profile_dir = project_root / ".pi"
+    if getattr(args, "legacy_name", False):
+        profile_path = profile_dir / "agent-workflow.yaml"
+    else:
+        profile_path = profile_dir / "rolecast.yaml"
 
     if args.template:
         lang = args.template
@@ -148,9 +153,10 @@ def _load_template(templates_dir: Path, lang: str) -> dict:
 
 def _blank_template() -> dict:
     return {
-        "framework_version": "0.1.0",
+        "framework_version": "0.2.0",
         "name": "",
         "description": "",
+        "workflow": {"role_groups": []},
         "gates": {},
         "bindings": {},
     }
@@ -178,15 +184,17 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--framework-root", default=str(Path(__file__).resolve().parent.parent))
     init.add_argument("--interactive", action="store_true",
                       help="walk through each profile section interactively (v2; v1 is a no-op)")
+    init.add_argument("--legacy-name", action="store_true",
+                      help="write to .pi/agent-workflow.yaml instead of .pi/rolecast.yaml")
     init.set_defaults(func=cmd_init)
 
     diff = sub.add_parser("diff", help="report schema differences vs current framework")
-    diff.add_argument("--profile", required=True, help="path to agent-workflow.yaml")
+    diff.add_argument("--profile", required=True, help="path to rolecast.yaml (or legacy agent-workflow.yaml)")
     diff.add_argument("--framework-root", default=str(Path(__file__).resolve().parent.parent))
     diff.set_defaults(func=cmd_diff)
 
     validate = sub.add_parser("validate", help="validate a profile against current schema")
-    validate.add_argument("--profile", required=True, help="path to agent-workflow.yaml")
+    validate.add_argument("--profile", required=True, help="path to rolecast.yaml (or legacy agent-workflow.yaml)")
     validate.add_argument("--framework-root", default=str(Path(__file__).resolve().parent.parent))
     validate.set_defaults(func=cmd_validate)
 

@@ -1,14 +1,18 @@
-# Reference profile reproducing today's rust-agent-workflow routing.
+# Reference profile reproducing today's rust-agent-workflow routing,
+# updated for pi-rolecast v0.2.0 (grouped roles, hyphen-prefixed names).
 # Generated manually from the old SKILL.md; this is the ground truth
 # users cross-check their scaffolder-generated profile against.
 
-framework_version: 0.1.0
-name: rust-agent-workflow-example
+framework_version: 0.2.0
+name: rust-rolecast-example
 description: |
   Reference Rust profile preserving the routing decisions of the original
-  rust-agent-workflow skill. Use scaffolder init --template rust in your
-  project to generate a similar profile; this file is the canonical
-  reference for cross-checking.
+  rust-agent-workflow skill, updated to the v0.2.0 grouped-role schema.
+  Use scaffolder init --template rust in your project to generate a
+  similar profile; this file is the canonical reference for cross-checking.
+
+workflow:
+  role_groups: [coding]
 
 gates:
   compile:
@@ -22,17 +26,17 @@ gates:
     timeout: 900
 
 bindings:
-  architect:      {alias: opus-thinking-medium, channels: [official]}
-  planner:        {alias: deepseek-verifiable, channels: [official]}
-  implementer:    {alias: deepseek-verifiable, channels: [official]}
-  tester:         {alias: deepseek-verifiable, channels: [official]}
-  reviewer:       {alias: gpt-judgment-high, channels: [official, relay-default]}
-  mapper:         {alias: deepseek-verifiable, channels: [official]}
-  profiler:       {alias: deepseek-verifiable, channels: [official]}
-  auditor:        {alias: opus-thinking-high, channels: [official]}
-  canary:         {alias: minimax-fast, channels: [official]}
-  docs:           {alias: minimax-medium, channels: [official]}
-  orchestrator:   {alias: gpt-judgment-medium, channels: [official, relay-default]}
+  coding-architect:    {alias: opus-thinking-medium, channels: [official]}
+  coding-planner:      {alias: deepseek-verifiable, channels: [official]}
+  coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+  coding-tester:       {alias: deepseek-verifiable, channels: [official]}
+  coding-reviewer:     {alias: gpt-judgment-high, channels: [official, relay-default]}
+  coding-mapper:       {alias: deepseek-verifiable, channels: [official]}
+  coding-profiler:     {alias: deepseek-verifiable, channels: [official]}
+  coding-auditor:      {alias: opus-thinking-high, channels: [official]}
+  coding-canary:       {alias: minimax-fast, channels: [official]}
+  coding-docs:         {alias: minimax-medium, channels: [official]}
+  coding-orchestrator: {alias: gpt-judgment-medium, channels: [official, relay-default]}
 
 non_negotiables:
   forbidden_patterns:

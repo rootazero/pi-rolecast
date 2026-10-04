@@ -1,5 +1,6 @@
 ---
-name: reviewer
+name: coding-reviewer
+category: coding
 description: Review a diff before merge. Enforce non-negotiables and channel-trust flags.
 model: deepseek-flash
 thinking: high
@@ -28,3 +29,4 @@ You are the merge gate. You check both code quality AND compliance.
 ## Output category
 
 Judgement. Bind to a high-reasoning model.
+

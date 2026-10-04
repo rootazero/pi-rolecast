@@ -22,9 +22,11 @@ def rust_workspace(tmp_path_factory):
 
 
 def test_validate_fixture_profile(rust_workspace):
+    # v0.2.0: fixture uses .pi/rolecast.yaml.
+    profile = rust_workspace / ".pi" / "rolecast.yaml"
     result = subprocess.run(
         [sys.executable, str(FRAMEWORK_ROOT / "scripts" / "scaffolder.py"),
-         "validate", "--profile", str(rust_workspace / ".pi" / "agent-workflow.yaml"),
+         "validate", "--profile", str(profile),
          "--framework-root", str(FRAMEWORK_ROOT)],
         capture_output=True, text=True, cwd=str(rust_workspace),
     )
@@ -33,9 +35,10 @@ def test_validate_fixture_profile(rust_workspace):
 
 @pytest.mark.skipif(shutil.which("cargo") is None, reason="cargo not installed")
 def test_gate_runner_compile_passes(rust_workspace):
+    profile = rust_workspace / ".pi" / "rolecast.yaml"
     result = subprocess.run(
         [sys.executable, str(FRAMEWORK_ROOT / "scripts" / "gate_runner.py"),
-         "--profile", str(rust_workspace / ".pi" / "agent-workflow.yaml"),
+         "--profile", str(profile),
          "--phase", "compile",
          "--framework-root", str(FRAMEWORK_ROOT),
          "--log-dir", str(rust_workspace / "logs")],

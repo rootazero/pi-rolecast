@@ -1,5 +1,6 @@
 ---
-name: docs
+name: coding-docs
+category: coding
 description: Write READMEs, visual assets, frontend copy, documentation.
 model: deepseek-flash
 thinking: medium
@@ -28,3 +29,4 @@ You write for humans. Output is generation, not verification.
 ## Output category
 
 Generation. Quality-driven, not machine-checkable.
+

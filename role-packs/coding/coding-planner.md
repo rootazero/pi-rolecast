@@ -1,5 +1,6 @@
 ---
-name: planner
+name: coding-planner
+category: coding
 description: Break a request into ordered steps with cross-module contracts. Output is verifiable.
 model: deepseek-flash
 thinking: medium
@@ -27,3 +28,4 @@ Steps are ordered. Cross-module contracts are explicit. No step carries code; th
 ## Output category
 
 Verifiable — every step has a verify clause. Bind to a verifiable-output model on a trusted channel.
+
