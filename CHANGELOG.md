@@ -2,6 +2,80 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] — 2026-10-05
+
+### Added
+
+- **Dynamic role to model binding (Approach 2).** Roles no longer pin a single `provider/modelId` at sync time. A profile can declare:
+
+  - **Capability requirements** on the role frontmatter:
+
+    ```yaml
+    ---
+    name: coding-architect
+    requires:
+      reasoning_tier: high
+      context_window: 32000
+      features: [thinking, tool_use]
+    preferences:
+      speed: medium
+      cost: low
+    ---
+    ```
+
+  - **A fallback chain** on each binding:
+
+    ```yaml
+    bindings:
+      coding-architect:
+        alias: deepseek-flash
+        channels: [coding]
+        fallback_chain:
+          - deepseek/deepseek-flash
+          - openai/gpt-4o-mini
+    ```
+
+  At dispatch time the extension walks the chain, then falls back to registry-ranked matches that meet the capability floor and best match the preferences.
+
+- **`scripts/dump_bindings.py`** — emits `{role_groups, bindings}` JSON for the TS extension to cache at session start.
+
+- **`src/model_resolver.ts`** — pure resolution core shared by sync and dispatch-time hooks. Algorithm: walk `fallback_chain` (allowed × available × meetsRequires) then rank `registry.list()` by preference score with stable slash-form tie-break. Returns either `{ok:true, source}` or `{ok:false, reason}`. Fails closed when `scopedModels` is explicitly empty.
+
+- **`/rolecast-status`** slash command — shows the cache state, scoped models, and per-role resolver outcome.
+
+- **`session_start` hook** — loads the bindings cache and surfaces a `warning` banner listing any role whose requirements cannot be satisfied by the current model pool.
+
+- **`tool_call` hook** — when the `Agent` tool is invoked with a `subagent_type` matching a cached binding, resolves a concrete model and mutates `event.input.model` in place. Blocks with a user-readable reason if resolution fails (no silent fallback).
+
+- **`input` hook** — transforms a leading `@handle` mention (where `handle` matches a cached role) into an explicit Agent dispatch instruction, so the main LLM calls the Agent tool, which then takes the `tool_call` path. Skips events where `source === "extension"` to avoid rewriting extension-originated input.
+
+### Changed
+
+- **`scripts/profile_loader.py`** — additive schema extension:
+  - `Binding` gains `fallback_chain`, `role_group`, `role_name`.
+  - `RoleDef` gains `requires`, `preferences`.
+  - `_parse_frontmatter` now uses PyYAML `safe_load`, handling nested blocks + inline lists (was hand-rolled flat regex).
+  - `_parse_bindings` accepts the discovered packs so it can stamp `role_group`/`role_name`.
+
+### Why this matters
+
+Prior versions pinned each role to one `provider/modelId`. That broke whenever:
+
+- A vendor withdrew or rate-limited the bound model.
+- A user's `~/.pi/models.json` no longer contained it.
+- A new role-pack was added whose pinned model the user hadn't configured.
+
+The resolver treats availability, capability, and preference as runtime properties of the user's actual model pool. Falls back explicitly, never silently (per arch-decision #4 lesson — `resolveDefaultModel`'s parentModel silent fallback is the bug we explicitly avoid).
+
+### Tests
+
+- 5 new Python tests for the schema extension (`tests/unit/test_profile_loader.py`).
+- Node tests for `src/model_resolver.ts` (`tsx --test`).
+
+### Migration
+
+Existing profiles keep working — `fallback_chain` defaults to `[]`, `requires`/`preferences` default to empty. Operators wanting dynamic binding opt in by adding `fallback_chain` and/or `requires` to their role frontmatter + bindings.
+
 ## [0.2.2] — 2026-10-04
 
 ### Added

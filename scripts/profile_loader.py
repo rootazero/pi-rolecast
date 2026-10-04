@@ -107,6 +107,9 @@ class CustomRole:
 class Binding:
     alias: str
     channels: list[str]
+    fallback_chain: list[str] = field(default_factory=list)
+    role_group: str = ""
+    role_name: str = ""
 
 
 @dataclass
@@ -130,6 +133,8 @@ class RoleDef:
     role: str                # e.g. "architect" (the basename)
     description: str = ""
     triggers: list[str] = field(default_factory=list)
+    requires: dict[str, Any] = field(default_factory=dict)
+    preferences: dict[str, Any] = field(default_factory=dict)
     file_path: Path | None = None
 
 
@@ -162,19 +167,28 @@ class Profile:
 # ─────────────────────────────────────────────────────────────────────
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_FM_FIELD_RE = re.compile(r"^(\w+):\s*(.*)$", re.MULTILINE)
 
 
-def _parse_frontmatter(text: str) -> dict[str, str]:
+def _parse_frontmatter(text: str) -> dict[str, Any]:
+    """Parse YAML frontmatter into a dict.
+
+    Supports nested blocks and inline lists so callers can express
+    capability descriptors like:
+
+        requires:
+          reasoning_tier: high
+          features: [thinking, tool_use]
+        preferences:
+          speed: medium
+    """
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return {}
-    out: dict[str, str] = {}
-    for ln in m.group(1).splitlines():
-        m2 = _FM_FIELD_RE.match(ln)
-        if m2:
-            out[m2.group(1)] = m2.group(2).strip()
-    return out
+    block = m.group(1)
+    loaded = yaml.safe_load(block) or {}
+    if not isinstance(loaded, dict):
+        return {}
+    return loaded
 
 
 def discover_role_packs(framework_root: str | Path) -> dict[str, list[RoleDef]]:
@@ -195,13 +209,20 @@ def discover_role_packs(framework_root: str | Path) -> dict[str, list[RoleDef]]:
             if role.startswith(f"{group}-"):
                 role = role[len(group) + 1:]
             fm = _parse_frontmatter(md.read_text())
-            full_name = fm.get("name", "").strip() or f"{group}-{role}"
-            desc = fm.get("description", "").strip()
+            full_name = (str(fm.get("name", "")).strip()
+                         or f"{group}-{role}")
+            desc = str(fm.get("description", "")).strip()
+            requires_raw = fm.get("requires") or {}
+            preferences_raw = fm.get("preferences") or {}
+            requires = requires_raw if isinstance(requires_raw, dict) else {}
+            preferences = preferences_raw if isinstance(preferences_raw, dict) else {}
             roles.append(RoleDef(
                 full_name=full_name,
                 group=group,
                 role=role,
                 description=desc,
+                requires=dict(requires),
+                preferences=dict(preferences),
                 file_path=md,
             ))
         if roles:
@@ -282,7 +303,7 @@ def parse_profile(raw: dict, *, framework_root: str | Path | None = None) -> Pro
     packs = available_roles(root, groups=workflow.role_groups)
     allowed_roles = set(packs.keys()) | {r.name for r in custom_roles}
 
-    bindings = _parse_bindings(raw.get("bindings") or {}, allowed_roles)
+    bindings = _parse_bindings(raw.get("bindings") or {}, allowed_roles, packs=packs)
     trigger_overrides = raw.get("trigger_overrides") or {}
     if not isinstance(trigger_overrides, dict):
         raise ProfileError("profile.trigger_overrides must be a mapping")
@@ -350,7 +371,8 @@ def _parse_custom_roles(items: Iterable[Any]) -> list[CustomRole]:
     return out
 
 
-def _parse_bindings(raw: dict, allowed_roles: set[str]) -> dict[str, Binding]:
+def _parse_bindings(raw: dict, allowed_roles: set[str],
+                    packs: dict[str, RoleDef] | None = None) -> dict[str, Binding]:
     if not isinstance(raw, dict):
         raise ProfileError("profile.bindings must be a mapping")
     out: dict[str, Binding] = {}
@@ -371,7 +393,22 @@ def _parse_bindings(raw: dict, allowed_roles: set[str]) -> dict[str, Binding]:
             raise ProfileError(f"bindings.{role}.alias is required")
         if "channels" not in b or not isinstance(b["channels"], list) or not b["channels"]:
             raise ProfileError(f"bindings.{role}.channels must be a non-empty list")
-        out[role] = Binding(alias=b["alias"], channels=list(b["channels"]))
+        fallback_chain = b.get("fallback_chain", [])
+        if fallback_chain is None:
+            fallback_chain = []
+        if not isinstance(fallback_chain, list) or any(
+                not isinstance(x, str) for x in fallback_chain):
+            raise ProfileError(
+                f"bindings.{role}.fallback_chain must be a list of model id strings"
+            )
+        rdef = packs.get(role) if packs else None
+        out[role] = Binding(
+            alias=b["alias"],
+            channels=list(b["channels"]),
+            fallback_chain=list(fallback_chain),
+            role_group=rdef.group if rdef else "",
+            role_name=rdef.role if rdef else "",
+        )
     return out
 
 

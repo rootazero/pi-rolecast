@@ -4,6 +4,10 @@ category: coding
 description: Review a diff before merge. Enforce non-negotiables and channel-trust flags.
 model: deepseek-flash
 thinking: high
+requires:
+  reasoning_tier: high
+  context_window: 64000
+  features: [thinking, tool_use]
 ---
 
 # Reviewer

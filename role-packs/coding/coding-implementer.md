@@ -4,6 +4,13 @@ category: coding
 description: Execute mechanical multi-file edits. Output is verifiable via project gates.
 model: deepseek-flash
 thinking: low
+requires:
+  reasoning_tier: medium
+  context_window: 16000
+  features: [tool_use]
+preferences:
+  speed: high
+  cost: low
 ---
 
 # Implementer

@@ -438,3 +438,110 @@ def test_load_profile_surfaces_deprecation_warning(tmp_path, monkeypatch):
     rb = loaded.resolved_bindings["coding-architect"]
     assert rb.warning is not None
     assert "deprecated" in rb.warning
+
+
+def test_binding_fallback_chain_default_empty(tmp_path):
+    """v0.3.0: binding without fallback_chain parses with empty list."""
+    profile = write_profile(tmp_path, """
+        framework_version: 0.3.0
+        name: test
+        description: fallback-chain default
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-canary: {alias: minimax-fast, channels: [official]}
+    """)
+    loaded = load_profile(profile, framework_root=Path(__file__).resolve().parents[2])
+    assert loaded.bindings["coding-canary"].fallback_chain == []
+
+
+def test_binding_fallback_chain_parses(tmp_path):
+    """v0.3.0: binding with fallback_chain parses into ordered list."""
+    profile = write_profile(tmp_path, """
+        framework_version: 0.3.0
+        name: test
+        description: fallback-chain explicit
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-canary:
+            alias: minimax-fast
+            channels: [official]
+            fallback_chain:
+              - deepseek/deepseek-flash
+              - anthropic/claude-sonnet
+    """)
+    loaded = load_profile(profile, framework_root=Path(__file__).resolve().parents[2])
+    fb = loaded.bindings["coding-canary"].fallback_chain
+    assert fb == ["deepseek/deepseek-flash", "anthropic/claude-sonnet"]
+
+
+def test_binding_fallback_chain_must_be_string_list(tmp_path):
+    """v0.3.0: fallback_chain must be a list of model id strings."""
+    profile = write_profile(tmp_path, """
+        framework_version: 0.3.0
+        name: test
+        description: fallback-chain type
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-canary:
+            alias: minimax-fast
+            channels: [official]
+            fallback_chain: [42]
+    """)
+    with pytest.raises(ProfileError, match="fallback_chain"):
+        load_profile(profile, framework_root=Path(__file__).resolve().parents[2])
+
+
+def test_binding_role_group_and_name_populated(tmp_path):
+    """v0.3.0: Binding records group/role derived from the binding key."""
+    profile = write_profile(tmp_path, """
+        framework_version: 0.3.0
+        name: test
+        description: binding carries group/role
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-canary: {alias: minimax-fast, channels: [official]}
+    """)
+    loaded = load_profile(profile, framework_root=Path(__file__).resolve().parents[2])
+    b = loaded.bindings["coding-canary"]
+    assert b.role_group == "coding"
+    assert b.role_name == "canary"
+
+
+def test_role_def_requires_and_preferences_parsed(tmp_path, monkeypatch):
+    """v0.3.0: role frontmatter `requires:` / `preferences:` populate RoleDef."""
+    fw_root = Path(__file__).resolve().parents[2]
+    role_md = (fw_root / "role-packs" / "coding" / "coding-canary.md")
+    original = role_md.read_text()
+    try:
+        role_md.write_text(
+            "---\n"
+            "name: coding-canary\n"
+            "category: coding\n"
+            "description: test\n"
+            "model: minimax-flash\n"
+            "thinking: low\n"
+            "requires:\n"
+            "  reasoning_tier: low\n"
+            "  features: [tool_use]\n"
+            "preferences:\n"
+            "  speed: high\n"
+            "  cost: low\n"
+            "---\n"
+            "body\n"
+        )
+        packs = discover_role_packs(fw_root)
+        canary = next(r for r in packs["coding"] if r.role == "canary")
+        assert canary.requires == {
+            "reasoning_tier": "low",
+            "features": ["tool_use"],
+        }
+        assert canary.preferences == {
+            "speed": "high",
+            "cost": "low",
+        }
+    finally:
+        role_md.write_text(original)

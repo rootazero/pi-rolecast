@@ -68,12 +68,13 @@ test("each tool has a non-empty description and an execute()", () => {
 	}
 });
 
-test("registers workflow-init / workflow-validate / workflow-diff / workflow-run commands", () => {
+test("registers workflow-init / workflow-validate / workflow-diff / workflow-run / rolecast-status commands", () => {
 	const pi = new MockPi();
 	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
 
 	const cmdNames = pi.commands.map((c) => c.name).sort();
 	assert.deepEqual(cmdNames, [
+		"rolecast-status",
 		"workflow-diff",
 		"workflow-init",
 		"workflow-run",
@@ -98,6 +99,26 @@ test("registers a session_start hook", () => {
 	assert.ok(
 		pi.hooks.some((h) => h.event === "session_start"),
 		"expected session_start hook to be registered",
+	);
+});
+
+test("registers a tool_call hook for Agent-tool model injection (v0.3.0 dynamic binding)", () => {
+	const pi = new MockPi();
+	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
+
+	assert.ok(
+		pi.hooks.some((h) => h.event === "tool_call"),
+		"expected tool_call hook to be registered",
+	);
+});
+
+test("registers an input hook for @handle mention transform (v0.3.0 dynamic binding)", () => {
+	const pi = new MockPi();
+	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
+
+	assert.ok(
+		pi.hooks.some((h) => h.event === "input"),
+		"expected input hook to be registered",
 	);
 });
 

@@ -4,6 +4,13 @@ category: coding
 description: Design system boundaries, public APIs, error strategies. Output is judgement, not code.
 model: deepseek-flash
 thinking: high
+requires:
+  reasoning_tier: high
+  context_window: 32000
+  features: [thinking, tool_use]
+preferences:
+  speed: medium
+  cost: low
 ---
 
 # Architect

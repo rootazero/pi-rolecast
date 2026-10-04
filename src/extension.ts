@@ -17,9 +17,17 @@
  *     - /workflow-validate  validate the project profile
  *     - /workflow-diff      check for framework schema drift
  *     - /workflow-run       run a gate phase
+ *     - /rolecast-status    show the dynamic binding snapshot
  *
  *   Event hooks:
- *     - session_start: detect missing profile and notify
+ *     - session_start: detect missing profile, load bindings cache, surface
+ *       unresolvable roles
+ *     - tool_call: when the Agent tool is invoked with a subagent_type that
+ *       matches a cached binding, resolve a concrete model and inject it.
+ *     - input: when the user types a leading `@<handle>` mention that matches
+ *       a cached binding, transform it into an explicit Agent dispatch
+ *       instruction so the main LLM calls the Agent tool (which then takes
+ *       the tool_call path).
  */
 
 import { execFile } from "node:child_process";
@@ -30,6 +38,16 @@ import { promisify } from "node:util";
 
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+import {
+	resolveModel,
+	type CapabilityPreference,
+	type CapabilityRequirement,
+	type RequiredFeature,
+	type ResolveResult,
+	type ResolverModel,
+	type ResolverRegistry,
+} from "./model_resolver.js";
 
 const execFileP = promisify(execFile);
 
@@ -288,11 +306,229 @@ const gateRunTool = defineTool({
 
 interface SessionCtx {
 	cwd: string;
-	ui: { notify: (msg: string, level?: "info" | "warn" | "error") => void };
+	ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void };
 }
 
 function profileStatus(cwd: string): { exists: boolean; path: string } {
 	return { exists: existsSync(projectProfile(cwd)), path: projectProfile(cwd) };
+}
+
+// ---- Dynamic model binding (v0.3.0) ----
+
+interface BindingPayload {
+	alias: string;
+	channels: string[];
+	fallback_chain: string[];
+	requires: CapabilityRequirement;
+	preferences: CapabilityPreference;
+}
+
+interface BindingsSnapshot {
+	role_groups: string[];
+	bindings: Record<string, BindingPayload>;
+	loadError?: string;
+}
+
+// Module-level cache; populated at session_start, read by hooks.
+let bindingsCache: BindingsSnapshot | null = null;
+let bindingsCacheCwd: string | null = null;
+
+async function loadBindings(cwd: string): Promise<BindingsSnapshot> {
+	const result = await runPythonScript(
+		"dump_bindings.py",
+		["--framework-root", FRAMEWORK_ROOT, "--cwd", cwd],
+		{ cwd, timeoutMs: 15_000 },
+	);
+	if (result.exitCode !== 0) {
+		return {
+			role_groups: [],
+			bindings: {},
+			loadError: (result.stderr || result.stdout || "dump_bindings.py failed").trim(),
+		};
+	}
+	try {
+		const parsed = JSON.parse(result.stdout || "{}");
+		if (parsed && typeof parsed === "object" && parsed.bindings && typeof parsed.bindings === "object") {
+			return {
+				role_groups: Array.isArray(parsed.role_groups) ? parsed.role_groups : [],
+				bindings: parsed.bindings as Record<string, BindingPayload>,
+			};
+		}
+		return { role_groups: [], bindings: {} };
+	} catch (e) {
+		return { role_groups: [], bindings: {}, loadError: `parse failed: ${(e as Error).message}` };
+	}
+}
+
+/**
+ * Adapt a pi Model into the resolver's ResolverModel shape.
+ *
+ * pi's Model only exposes `reasoning: boolean` — not a tier. We map:
+ *   reasoning=true  → reasoning_tier="high"   (always reasoners)
+ *   reasoning=false → reasoning_tier undefined  (let the resolver treat as
+ *                     unknown, which means requires.reasoning_tier won't
+ *                     match — but features=[thinking] still works)
+ *
+ * `speed` / `cost` are not available on pi's Model; we leave them absent
+ * and let the resolver treat preferences as unmatchable rather than wrong.
+ */
+function piModelToResolverModel(m: {
+	id: string;
+	provider: string;
+	reasoning?: boolean;
+	contextWindow?: number;
+	input?: ReadonlyArray<"text" | "image">;
+}): ResolverModel {
+	const features: RequiredFeature[] = [];
+	if (m.input && m.input.includes("image")) features.push("vision");
+	if (m.reasoning) features.push("thinking");
+	// tool_use is implicit for chat models in pi.
+	features.push("tool_use");
+	return {
+		provider: m.provider,
+		id: m.id,
+		reasoning_tier: m.reasoning ? "high" : undefined,
+		context_window: typeof m.contextWindow === "number" ? m.contextWindow : undefined,
+		features,
+	};
+}
+
+interface PiModelRegistryLike {
+	getAll(): ReadonlyArray<{
+		id: string;
+		provider: string;
+		reasoning?: boolean;
+		contextWindow?: number;
+		input?: ReadonlyArray<"text" | "image">;
+	}>;
+	getAvailable(): ReadonlyArray<{ id: string; provider: string }>;
+	find(provider: string, id: string): { id: string; provider: string } | undefined;
+}
+
+function makeResolverRegistry(modelRegistry: PiModelRegistryLike): ResolverRegistry {
+	const all = modelRegistry.getAll();
+	return {
+		list: () => all.map(piModelToResolverModel),
+		find: (provider: string, id: string) => {
+			const m = modelRegistry.find(provider, id);
+			return m ? piModelToResolverModel(m) : undefined;
+		},
+		getAvailable: () => modelRegistry.getAvailable().map((m) => ({ provider: m.provider, id: m.id })),
+	};
+}
+
+function normaliseRequires(raw: unknown): CapabilityRequirement {
+	if (!raw || typeof raw !== "object") return {};
+	const r = raw as Record<string, unknown>;
+	const out: CapabilityRequirement = {};
+	if (r.reasoning_tier === "low" || r.reasoning_tier === "medium" || r.reasoning_tier === "high") {
+		out.reasoning_tier = r.reasoning_tier;
+	}
+	if (typeof r.context_window === "number" && r.context_window > 0) {
+		out.context_window = r.context_window;
+	}
+	if (Array.isArray(r.features)) {
+		const features: RequiredFeature[] = [];
+		for (const f of r.features) {
+			if (f === "thinking" || f === "tool_use" || f === "vision") features.push(f);
+		}
+		if (features.length > 0) out.features = features;
+	}
+	return out;
+}
+
+function normalisePreferences(raw: unknown): CapabilityPreference {
+	if (!raw || typeof raw !== "object") return {};
+	const p = raw as Record<string, unknown>;
+	const out: CapabilityPreference = {};
+	if (p.speed === "low" || p.speed === "medium" || p.speed === "high") out.speed = p.speed;
+	if (p.cost === "low" || p.cost === "medium" || p.cost === "high") out.cost = p.cost;
+	return out;
+}
+
+function normaliseFallbackChain(raw: unknown): ReadonlyArray<string> {
+	if (!Array.isArray(raw)) return [];
+	return raw.filter((x): x is string => typeof x === "string" && x.includes("/"));
+}
+
+function resolveForRole(
+	role: string,
+	ctx: {
+		binding: BindingPayload;
+		scopedModels: ReadonlyArray<{ provider: string; id: string }>;
+		registry: ResolverRegistry;
+	},
+): ResolveResult {
+	return resolveModel({
+		binding: {
+			alias: ctx.binding.alias,
+			fallback_chain: normaliseFallbackChain(ctx.binding.fallback_chain),
+		},
+		registry: ctx.registry,
+		scopedModels:
+			ctx.scopedModels.length === 0
+				? undefined
+				: ctx.scopedModels.map((m) => ({ provider: m.provider, id: m.id })),
+		requires: normaliseRequires(ctx.binding.requires),
+		preferences: normalisePreferences(ctx.binding.preferences),
+	});
+}
+
+// Match a leading @handle mention. Mirrors pi-subagents' `[\w-]+` regex so
+// we agree on what counts as a handle. Restrict to role names known to the
+// cache before transforming.
+const HANDLE_PATTERN = /^@([\w-]+)\s+([\s\S]+)$/;
+
+function handleInCache(handle: string): boolean {
+	return bindingsCache !== null && Object.prototype.hasOwnProperty.call(bindingsCache.bindings, handle);
+}
+
+function transformHandle(text: string): { text: string; handle?: string; rest?: string } {
+	const m = HANDLE_PATTERN.exec(text);
+	if (!m) return { text };
+	const handle = m[1];
+	const rest = m[2];
+	if (!handleInCache(handle)) return { text };
+	return {
+		text:
+			`Dispatch this task to the @${handle} role via the Agent tool (subagent_type="${handle}"). ` +
+			`Do NOT answer the request yourself — the Agent tool will run it on a model bound to that role. ` +
+			`Pass the user's task verbatim as the prompt.`,
+		handle,
+		rest,
+	};
+}
+
+function snapshotForRolecast(
+	cwd: string,
+	scopedModels: ReadonlyArray<{ provider: string; id: string }>,
+	registry: ResolverRegistry,
+): string {
+	const lines: string[] = [];
+	lines.push(`pi-rolecast dynamic binding snapshot`);
+	lines.push(`cwd: ${cwd}`);
+	lines.push(`cached bindings: ${bindingsCache ? Object.keys(bindingsCache.bindings).length : 0}`);
+	if (bindingsCache?.loadError) lines.push(`load error: ${bindingsCache.loadError}`);
+	lines.push(`registry models: ${registry.list().length}`);
+	lines.push(`scoped models: ${scopedModels.length === 0 ? "(none — all available models usable)" : scopedModels.length}`);
+	lines.push("");
+	if (bindingsCache === null) {
+		lines.push("(bindings cache not populated — session_start may not have fired yet)");
+		return lines.join("\n");
+	}
+	const roleNames = Object.keys(bindingsCache.bindings).sort();
+	for (const role of roleNames) {
+		const payload = bindingsCache.bindings[role];
+		const result = resolveForRole(role, { binding: payload, scopedModels, registry });
+		if (result.ok) {
+			lines.push(
+				`OK   ${role.padEnd(28)} -> ${result.model.slashForm.padEnd(40)} (${result.source})`,
+			);
+		} else {
+			lines.push(`FAIL ${role.padEnd(28)} -> ${result.reason}`);
+		}
+	}
+	return lines.join("\n");
 }
 
 // ---- Extension factory ----
@@ -341,14 +577,104 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	// Detect missing profile on session start and surface it as a one-time hint.
-	pi.on("session_start", (_event, ctx) => {
-		const status = profileStatus((ctx as unknown as SessionCtx).cwd);
+	pi.registerCommand("rolecast-status", {
+		description: "Show the dynamic binding snapshot (cache + per-role resolver outcome).",
+		handler: async (_args, ctx) => {
+			const extCtx = ctx as unknown as SessionCtx & { modelRegistry: PiModelRegistryLike; scopedModels: ReadonlyArray<{ provider: string; id: string }> };
+			const registry = makeResolverRegistry(extCtx.modelRegistry);
+			const text = snapshotForRolecast(extCtx.cwd, extCtx.scopedModels, registry);
+			ctx.ui.notify(text, bindingsCache?.loadError ? "warning" : "info");
+		},
+	});
+
+	// ---- Event hooks ----
+
+	// session_start: detect missing profile, load bindings cache, surface unresolvable roles.
+	pi.on("session_start", async (_event, ctx) => {
+		const extCtx = ctx as unknown as SessionCtx & { modelRegistry: PiModelRegistryLike; scopedModels: ReadonlyArray<{ provider: string; id: string }> };
+		const status = profileStatus(extCtx.cwd);
 		if (!status.exists) {
-			ctx.ui.notify(
+			extCtx.ui.notify(
 				`pi-rolecast: no profile found at ${status.path}. Run /workflow-init to bootstrap one.`,
 				"info",
 			);
 		}
+		// Refresh the bindings cache so hooks see the current profile state.
+		bindingsCacheCwd = extCtx.cwd;
+		bindingsCache = await loadBindings(extCtx.cwd);
+		if (bindingsCache.loadError) {
+			extCtx.ui.notify(
+				`pi-rolecast: failed to load bindings (${bindingsCache.loadError}). Dynamic binding disabled this session.`,
+				"warning",
+			);
+			return;
+		}
+		if (Object.keys(bindingsCache.bindings).length === 0) {
+			return; // No profile or no bindings — nothing to surface.
+		}
+		// Walk every binding; surface any that cannot be resolved.
+		const registry = makeResolverRegistry(extCtx.modelRegistry);
+		const failures: string[] = [];
+		for (const [role, payload] of Object.entries(bindingsCache.bindings)) {
+			const result = resolveForRole(role, {
+				binding: payload,
+				scopedModels: extCtx.scopedModels,
+				registry,
+			});
+			if (!result.ok) failures.push(`${role}: ${result.reason}`);
+		}
+		if (failures.length > 0) {
+			extCtx.ui.notify(
+				`pi-rolecast: ${failures.length}/${Object.keys(bindingsCache.bindings).length} role(s) unresolved:\n` +
+					failures.map((s) => `  - ${s}`).join("\n") +
+					"\nRun /rolecast-status for details.",
+				"warning",
+			);
+		}
+	});
+
+	// tool_call: when the Agent tool is invoked with a subagent_type matching
+	// a cached binding, resolve a concrete model and inject it as `model:`.
+	pi.on("tool_call", (event, ctx) => {
+		const extCtx = ctx as unknown as { modelRegistry: PiModelRegistryLike; scopedModels: ReadonlyArray<{ provider: string; id: string }> };
+		// CustomToolCallEvent covers any non-built-in tool — pi-subagents'
+		// "Agent" tool falls into this branch.
+		const input = event.input as Record<string, unknown> | undefined;
+		if (!input) return;
+		if (event.toolName !== "Agent") return;
+		const subagentType = input.subagent_type;
+		if (typeof subagentType !== "string" || subagentType.length === 0) return;
+		if (bindingsCache === null) return;
+		const payload = bindingsCache.bindings[subagentType];
+		if (!payload) return;
+		const registry = makeResolverRegistry(extCtx.modelRegistry);
+		const result = resolveForRole(subagentType, {
+			binding: payload,
+			scopedModels: extCtx.scopedModels,
+			registry,
+		});
+		if (!result.ok) {
+			return {
+				block: true,
+				reason:
+					`pi-rolecast: cannot resolve a model for role '${subagentType}'. ` +
+					`${result.reason}. Run /rolecast-status for details.`,
+				terminate: true,
+			};
+		}
+		// Only inject if the caller did not already pick a model.
+		if (typeof input.model !== "string" || input.model.length === 0) {
+			input.model = result.model.slashForm;
+		}
+	});
+
+	// input: rewrite leading @handle mentions that match a cached binding
+	// into an explicit Agent dispatch instruction. The main LLM then calls
+	// the Agent tool, which takes the tool_call path above.
+	pi.on("input", (event, _ctx) => {
+		if (event.source === "extension") return; // never rewrite extension-originated input
+		const t = transformHandle(event.text);
+		if (!t.handle) return;
+		return { action: "transform", text: t.text, images: event.images };
 	});
 }
