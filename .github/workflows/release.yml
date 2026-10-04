@@ -83,7 +83,7 @@ jobs:
       # workflow still printed E404 and exited 1. The verify step below
       # treats that as success and turns the workflow green.
       - name: Verify publish succeeded
-        if: steps.publish.outcome == 'failure'
+        if: steps.publish.conclusion == 'failure'
         env:
           VERSION: ${{ github.ref_name }}
         run: |
