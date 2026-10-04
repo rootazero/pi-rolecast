@@ -31,11 +31,9 @@ if [[ -n "$DRY_RUN" ]]; then
 fi
 mkdir -p "$PREFIX"
 
-# Framework symlink (new pi-rolecast name; keep removing the legacy name).
-if [[ ! -e "$PREFIX/pi-rolecast" ]]; then
-  ln -s "$FRAMEWORK_ROOT" "$PREFIX/pi-rolecast"
-  echo "linked $PREFIX/pi-rolecast to $FRAMEWORK_ROOT"
-fi
+# Remove legacy pi-agent-workflow framework symlink if it exists.
+# v0.2.3: no longer creates ~/.pi/agent/pi-rolecast symlink — npm install
+# path (~/.pi/agent/npm/node_modules/pi-rolecast) is canonical.
 if [[ -e "$PREFIX/pi-agent-workflow" ]]; then
   echo "removing legacy $PREFIX/pi-agent-workflow symlink"
   rm -f "$PREFIX/pi-agent-workflow"
@@ -70,26 +68,15 @@ if [[ -d "$agents_dir" ]]; then
 fi
 linked=0
 while IFS= read -r md; do
-  role=$(basename "$md" .md)        # e.g. "coding-architect"
-  bare="${role#coding-}"           # legacy compat name e.g. "architect" (for coding group)
+  role=$(basename "$md" .md)        # e.g. "coding-architect" (full prefixed name)
   link_path="$agents_dir/$role.md"
   if [[ -L "$link_path" ]]; then
     rm -f "$link_path"
   fi
   ln -s "$md" "$link_path"
   linked=$((linked + 1))
-  # Legacy shim: create <bare-role>.md symlink for extensions that key
-  # off filename (e.g. bundled pi-cc-extensions). Removed in v0.3.0.
-  if [[ "$role" == "$bare" ]]; then
-    continue                        # safety: if role had no group prefix, skip
-  fi
-  legacy_link="$agents_dir/$bare.md"
-  if [[ ! -L "$legacy_link" && ! -e "$legacy_link" ]]; then
-    ln -s "$md" "$legacy_link"
-    linked=$((linked + 1))
-  fi
 done < <(find "$FRAMEWORK_ROOT/role-packs" -type f -name '*.md' 2>/dev/null | sort)
-echo "linked $linked role agents from role-packs/ (incl. legacy compat shims)"
+echo "linked $linked role agents from role-packs/"
 
 # Warn if pi-subagents is missing — required for actual role dispatch.
 SETTINGS_JSON="$PREFIX/settings.json"

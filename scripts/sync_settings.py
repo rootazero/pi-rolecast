@@ -253,11 +253,6 @@ def _write_agents(agents_dir: Path, framework_root: Path,
     """Write project-local copies of role-packs/<group>/<role>.md for every
     bound role. Uses full role name (`<group>-<role>`) as the filename so
     pi-subagents can find it via @<full-name> mention syntax.
-
-    Also writes a legacy `<bare-role>.md` shim for extensions that key off
-    filename (e.g. the bundled pi-cc-extensions subagent reference provider).
-    Both files contain the same body, just different filenames. The legacy
-    shim is removed in v0.3.0.
     """
     roles = available_roles(framework_root, groups=enabled_groups or None)
     if dry_run:
@@ -269,10 +264,6 @@ def _write_agents(agents_dir: Path, framework_root: Path,
             full = (provider + "/" + model_id) if provider else model_id
             print("would write " + str(agents_dir / (role_full_name + ".md")) +
                   " model=" + full)
-            legacy = rd.role
-            if legacy and legacy != role_full_name:
-                print("would write " + str(agents_dir / (legacy + ".md")) +
-                      " model=" + full + " (legacy shim)")
         return 0
     agents_dir.mkdir(parents=True, exist_ok=True)
     written = 0
@@ -293,17 +284,7 @@ def _write_agents(agents_dir: Path, framework_root: Path,
         dst = agents_dir / (role_full_name + ".md")
         dst.write_text(updated)
         written += 1
-        # Legacy shim: bare role name for filename-keyed extensions.
-        # Only created for the coding group; other groups have no legacy.
-        legacy = rd.role
-        if legacy and legacy != role_full_name and rd.group == "coding":
-            legacy_dst = agents_dir / (legacy + ".md")
-            if legacy_dst.exists() or legacy_dst.is_symlink():
-                legacy_dst.unlink()
-            legacy_dst.write_text(updated)
-            written += 1
-    print("wrote " + str(written) + " project-local agent files to " + str(agents_dir) +
-          " (incl. legacy compat shims)")
+    print("wrote " + str(written) + " project-local agent files to " + str(agents_dir))
     return 0
 
 

@@ -7,10 +7,9 @@ EXAMPLE_PROFILE = Path(__file__).resolve().parents[2] / "examples" / "rust" / "p
 
 
 def test_install_creates_framework_dir_and_symlinks(tmp_path):
-    """v0.2.0: install creates ~/.pi/agent/pi-rolecast symlink + per-role
-    symlinks at agents/<group>-<role>.md for every role in role-packs/.
-    Also creates legacy <role>.md compat shims for filename-keyed extensions
-    (e.g. bundled pi-cc-extensions)."""
+    """v0.2.0: install creates per-role symlinks at agents/<group>-<role>.md
+    for every role in role-packs/. v0.2.3: no longer creates the global
+    ~/.pi/agent/pi-rolecast framework symlink (npm install path is canonical)."""
     prefix = tmp_path / "agent"
     prefix.mkdir()
     fw_root = Path(__file__).resolve().parents[2]
@@ -20,8 +19,9 @@ def test_install_creates_framework_dir_and_symlinks(tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert (prefix / "pi-rolecast").exists(), \
-        f"missing pi-rolecast symlink: {prefix / 'pi-rolecast'}"
+    # v0.2.3: no global pi-rolecast framework symlink created. Use npm path.
+    assert not (prefix / "pi-rolecast").exists(), \
+        f"unexpected pi-rolecast symlink: {prefix / 'pi-rolecast'}"
     # v0.2.0+ prefixed symlinks under agents/<group>-<role>.md
     for role in ["coding-orchestrator", "coding-architect", "coding-planner",
                  "coding-implementer", "coding-tester", "coding-reviewer",
@@ -32,15 +32,8 @@ def test_install_creates_framework_dir_and_symlinks(tmp_path):
         target = link.resolve()
         assert target == (fw_root / "role-packs" / "coding" / f"{role}.md").resolve(), \
             f"wrong target for {role}: {target}"
-    # Legacy compat shims under agents/<role>.md (no group prefix) for coding roles.
-    for legacy_role in ["architect", "planner", "implementer", "tester", "reviewer",
-                        "mapper", "profiler", "auditor", "canary", "docs"]:
-        legacy_link = prefix / "agents" / f"{legacy_role}.md"
-        assert legacy_link.is_symlink(), \
-            f"missing legacy compat symlink for {legacy_role}: {legacy_link}"
-        # Legacy symlink target points to the prefixed role-pack file (NOT a separate copy).
-        assert legacy_link.resolve() == (fw_root / "role-packs" / "coding" / f"coding-{legacy_role}.md").resolve(), \
-            f"legacy compat target wrong for {legacy_role}: {legacy_link.resolve()}"
+    # Only prefixed symlinks exist (no legacy compat shims; pi-rolecast is
+    # the canonical naming convention going forward).
 
 
 def test_install_dry_run_does_not_write(tmp_path):
@@ -184,7 +177,8 @@ def test_install_removes_legacy_pi_agent_workflow_symlink(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "removing legacy" in result.stdout
     assert not (prefix / "pi-agent-workflow").exists()
-    assert (prefix / "pi-rolecast").exists()
+    # v0.2.3: pi-rolecast framework symlink no longer created by install.
+    assert not (prefix / "pi-rolecast").exists()
 
 
 def test_install_warns_when_pi_subagents_missing(tmp_path):
