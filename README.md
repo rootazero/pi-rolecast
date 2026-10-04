@@ -42,7 +42,7 @@ pi install npm:pi-rolecast
 
 This registers the framework as a Pi extension. After installing, run `/reload` in Pi. The extension exposes:
 
-- **Slash commands**: `/workflow-init`, `/workflow-validate`, `/workflow-diff`, `/workflow-run`
+- **Slash commands**: `/rolecast-init`, `/rolecast-validate`, `/rolecast-diff`, `/rolecast-run`
 - **Model-callable tools**: `scaffolder_init`, `scaffolder_validate`, `scaffolder_diff`, `gate_run`
 - **A `session_start` hook** that notifies when no `.pi/rolecast.yaml` is present
 
@@ -103,10 +103,10 @@ After `pi install`, the extension exposes:
 **Slash commands:**
 
 ```
-/workflow-init                 # scaffold .pi/rolecast.yaml
-/workflow-validate             # validate the project profile
-/workflow-diff                 # check for framework schema drift
-/workflow-run [phase]          # run gate-runner; phase defaults to all
+/rolecast-init                 # scaffold .pi/rolecast.yaml
+/rolecast-validate             # validate the project profile
+/rolecast-diff                 # check for framework schema drift
+/rolecast-run [phase]          # run gate-runner; phase defaults to all
 ```
 
 **Model-callable tools** (the LLM can call these directly):
@@ -116,7 +116,7 @@ After `pi install`, the extension exposes:
 - `scaffolder_diff` — wraps `python3 scripts/scaffolder.py diff`
 - `gate_run` — wraps `python3 scripts/gate_runner.py`
 
-**`session_start` hook** — if no `.pi/rolecast.yaml` is found in the project root, you'll see a one-time hint pointing to `/workflow-init`.
+**`session_start` hook** — if no `.pi/rolecast.yaml` is found in the project root, you'll see a one-time hint pointing to `/rolecast-init`.
 
 ### Via the manual install (shell only)
 

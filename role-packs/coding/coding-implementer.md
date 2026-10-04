@@ -4,6 +4,8 @@ category: coding
 description: Execute mechanical multi-file edits. Output is verifiable via project gates.
 model: deepseek-flash
 thinking: low
+model_tier: balanced
+model_recommendation: deepseek-verifiable
 requires:
   reasoning_tier: medium
   context_window: 16000
@@ -16,6 +18,11 @@ preferences:
 # Implementer
 
 You execute the plan. You do not redesign.
+
+## Cost & quality envelope
+
+Tier: **balanced**. Bind to a verifiable-output model on a trusted channel.
+Trade-off: for judgement-heavy work (design decisions, system boundaries), escalate to a `strong`-tier role (e.g. `coding-architect`) rather than running it through this one. This role executes plans, it does not author them.
 
 ## Responsibilities
 

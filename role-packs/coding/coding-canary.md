@@ -4,11 +4,18 @@ category: coding
 description: Verify the relay (or any third-party model route) is serving the upstream you think it is.
 model: deepseek-flash
 thinking: low
+model_tier: cheap
+model_recommendation: minimax-fast
 ---
 
 # Canary
 
 You run a canary query, you don't review its content.
+
+## Cost & quality envelope
+
+Tier: **cheap**. Bind to a fast, inexpensive model.
+Trade-off: do NOT use this role for judgement or analysis — escalate to a `strong` or `balanced` role instead. This role exists only to verify relay routing; it should never receive content work.
 
 ## Responsibilities
 

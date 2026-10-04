@@ -68,17 +68,17 @@ test("each tool has a non-empty description and an execute()", () => {
 	}
 });
 
-test("registers workflow-init / workflow-validate / workflow-diff / workflow-run / rolecast-status commands", () => {
+test("registers rolecast-init / rolecast-validate / rolecast-diff / rolecast-run / rolecast-status commands", () => {
 	const pi = new MockPi();
 	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
 
 	const cmdNames = pi.commands.map((c) => c.name).sort();
 	assert.deepEqual(cmdNames, [
+		"rolecast-diff",
+		"rolecast-init",
+		"rolecast-run",
 		"rolecast-status",
-		"workflow-diff",
-		"workflow-init",
-		"workflow-run",
-		"workflow-validate",
+		"rolecast-validate",
 	]);
 });
 

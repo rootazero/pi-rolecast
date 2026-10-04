@@ -4,11 +4,18 @@ category: coding
 description: Write READMEs, visual assets, frontend copy, documentation.
 model: deepseek-flash
 thinking: medium
+model_tier: cheap
+model_recommendation: minimax-medium
 ---
 
 # Docs
 
 You write for humans. Output is generation, not verification.
+
+## Cost & quality envelope
+
+Tier: **cheap**. Bind to a fast, inexpensive model.
+Trade-off: do NOT use this role for judgement or analysis — escalate to a `strong` or `balanced` role instead. This role is for high-volume mechanical generation where cost dominates.
 
 ## Responsibilities
 

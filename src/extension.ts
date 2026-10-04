@@ -13,10 +13,10 @@
  *     - gate_run            wraps `python3 scripts/gate_runner.py`
  *
  *   Slash commands:
- *     - /workflow-init      scaffold a project profile
- *     - /workflow-validate  validate the project profile
- *     - /workflow-diff      check for framework schema drift
- *     - /workflow-run       run a gate phase
+ *     - /rolecast-init      scaffold a project profile
+ *     - /rolecast-validate  validate the project profile
+ *     - /rolecast-diff      check for framework schema drift
+ *     - /rolecast-run       run a gate phase
  *     - /rolecast-status    show the dynamic binding snapshot
  *
  *   Event hooks:
@@ -540,41 +540,47 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 	pi.registerTool(scaffolderDiffTool);
 	pi.registerTool(gateRunTool);
 
-	// Slash commands mirror the tools for direct user invocation.
-	pi.registerCommand("workflow-init", {
+	// Slash commands mirror the tools for direct user invocation. Names use the
+// `rolecast-*` prefix (matches the package name).
+	const initHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const parts = args.trim().split(/\s+/).filter(Boolean);
+		const pyArgs = ["init", ...parts];
+		const result = await runPythonScript("scaffolder.py", pyArgs);
+		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	};
+	const validateHandler = async (_args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const result = await runPythonScript("scaffolder.py", ["validate"]);
+		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	};
+	const diffHandler = async (_args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const result = await runPythonScript("scaffolder.py", ["diff"]);
+		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	};
+	const runHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const phase = args.trim();
+		const pyArgs = phase ? ["--phase", phase] : [];
+		const result = await runPythonScript("gate_runner.py", pyArgs, { timeoutMs: 10 * 60_000 });
+		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	};
+
+	pi.registerCommand("rolecast-init", {
 		description: "Bootstrap .pi/rolecast.yaml in the current project.",
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const pyArgs = ["init", ...parts];
-			const result = await runPythonScript("scaffolder.py", pyArgs);
-			ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
-		},
+		handler: initHandler,
 	});
 
-	pi.registerCommand("workflow-validate", {
+	pi.registerCommand("rolecast-validate", {
 		description: "Validate the current project's profile.",
-		handler: async (_args, ctx) => {
-			const result = await runPythonScript("scaffolder.py", ["validate"]);
-			ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
-		},
+		handler: validateHandler,
 	});
 
-	pi.registerCommand("workflow-diff", {
+	pi.registerCommand("rolecast-diff", {
 		description: "Check the project profile for framework schema drift.",
-		handler: async (_args, ctx) => {
-			const result = await runPythonScript("scaffolder.py", ["diff"]);
-			ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
-		},
+		handler: diffHandler,
 	});
 
-	pi.registerCommand("workflow-run", {
-		description: "Run the project's gate-runner. Usage: /workflow-run [phase]",
-		handler: async (args, ctx) => {
-			const phase = args.trim();
-			const pyArgs = phase ? ["--phase", phase] : [];
-			const result = await runPythonScript("gate_runner.py", pyArgs, { timeoutMs: 10 * 60_000 });
-			ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
-		},
+	pi.registerCommand("rolecast-run", {
+		description: "Run the project's gate-runner. Usage: /rolecast-run [phase]",
+		handler: runHandler,
 	});
 
 	pi.registerCommand("rolecast-status", {
@@ -595,7 +601,7 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		const status = profileStatus(extCtx.cwd);
 		if (!status.exists) {
 			extCtx.ui.notify(
-				`pi-rolecast: no profile found at ${status.path}. Run /workflow-init to bootstrap one.`,
+				`pi-rolecast: no profile found at ${status.path}. Run /rolecast-init to bootstrap one.`,
 				"info",
 			);
 		}

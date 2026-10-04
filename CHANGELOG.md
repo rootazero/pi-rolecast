@@ -2,6 +2,18 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+## [0.4.0] — 2026-10-04
+
+### Changed
+
+- **Slash commands hard-renamed to match the package name.** `/workflow-init`, `/workflow-validate`, `/workflow-diff`, and `/workflow-run` are now `/rolecast-init`, `/rolecast-validate`, `/rolecast-diff`, and `/rolecast-run`. The `/workflow-*` names were a leftover from the original `pi-agent-workflow` package and survived only because no one revisited them after the v0.2.0 rename. The `session_start` "no profile found" hint now points to `/rolecast-init`. The new names align with the existing `/rolecast-status` command that was added in v0.3.0. The project is still pre-user; no backward-compat aliases are kept, so any script that calls `/workflow-*` directly will need a one-line rename to `/rolecast-*`.
+
+### Added
+
+- **Role pack tier system (`model_tier` + `model_recommendation`).** Each role pack now declares its cost/quality tier (`strong` | `balanced` | `cheap`) and the framework's recommended starting alias. This makes the tier classification visible to the orchestrator LLM at planning time, so dispatch decisions account for cost and capability envelopes instead of defaulting to the main model for every role. The 11 shipped roles in `role-packs/coding/` have all been classified and annotated with a `## Cost & quality envelope` body section naming the tier, the binding target, and the trade-off (which roles to defer to, which to escalate to). Authoring guide lives at `references/role-authoring.md`. The resolver (`src/model_resolver.ts`) does not yet consume the new fields — this first step is purely declarative so we can verify the orchestrator reads and acts on the tier metadata before upgrading the resolver. Planned resolver follow-up (v0.4.x): explicit downgrade warnings when no fallback matches the recommended tier, automatic downgrade to the user's best tier-matching model, and a session_start summary listing each role's running tier vs. recommended tier.
+
 ## [0.3.1] — 2026-10-05
 
 ### Fixed

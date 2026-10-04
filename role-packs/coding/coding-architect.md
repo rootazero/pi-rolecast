@@ -4,6 +4,8 @@ category: coding
 description: Design system boundaries, public APIs, error strategies. Output is judgement, not code.
 model: deepseek-flash
 thinking: high
+model_tier: strong
+model_recommendation: opus-thinking-medium
 requires:
   reasoning_tier: high
   context_window: 32000
@@ -16,6 +18,11 @@ preferences:
 # Architect
 
 You design. You do not implement. Output a clear architecture decision, not a diff.
+
+## Cost & quality envelope
+
+Tier: **strong**. Bind to a high-reasoning model on a trusted channel.
+Trade-off: every strong-tier call is the most expensive in the workflow. For trivial subtasks, defer to a `balanced`-tier role (e.g. `coding-implementer`) before invoking this role.
 
 ## Responsibilities
 
