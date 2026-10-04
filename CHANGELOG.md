@@ -6,7 +6,17 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ### Fixed
 
-- **Release workflow first-publish noise on npm 11.** The first publish of `pi-rolecast@0.3.0` via OIDC trusted publishing succeeded (tarball uploaded, provenance attestation published to sigstore), but `npm publish` then printed `E404 Not Found` from a follow-up HEAD/PUT verification call and exited 1. The package was already live; the workflow step ran red despite a successful publish. Added a `Verify publish succeeded` step that runs only on publish failure, queries `npm view pi-rolecast@<tag> version`, and treats a live version as success. Genuine failures (auth, network, version conflict) still propagate the original exit code. Verified by re-running on v0.3.1.
+- **Release workflow first-publish noise on npm 11.** The first publish of `pi-rolecast@0.3.0` via OIDC trusted publishing succeeded (tarball uploaded, provenance attestation published to sigstore), but `npm publish` then printed `E404 Not Found` from a follow-up HEAD/PUT verification call and exited 1. The package was already live; the workflow step ran red despite a successful publish. Added a `Verify publish succeeded` step that runs only on publish failure, queries `npm view pi-rolecast@<tag> version`, and treats a live version as success. Genuine failures (auth, network, version conflict) still propagate the original exit code.
+
+### Known issue (verified non-publish)
+
+The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 — provenance was signed and the sigstore log entry was published, but `npm view` confirmed the version never reached the registry. The `Verify publish succeeded` step was skipped rather than running the recovery path: the conditional `if: steps.publish.outcome == 'failure'` did not match because the `outcome` field is null on run-shell steps in the GitHub Actions step API (only `conclusion` is populated). v0.3.1 was therefore never published; users should skip to v0.3.2.
+
+## [0.3.2] — 2026-10-05
+
+### Fixed
+
+- **Release workflow verify step skipped on publish failure.** The conditional guarding the `Verify publish succeeded` step read `steps.publish.outcome`, which the GitHub Actions step API returns as `null` for `run` shell steps (only `conclusion` is populated for those). The verify step therefore never ran when the publish step exited 1, even though `conclusion` was correctly `failure`. Changed the conditional to `steps.publish.conclusion == 'failure'`. v0.3.1 had been a non-publish for exactly this reason; v0.3.2 ships the fix.
 
 ## [0.3.0] — 2026-10-05
 
