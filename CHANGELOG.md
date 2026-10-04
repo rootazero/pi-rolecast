@@ -2,6 +2,12 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-10-05
+
+### Fixed
+
+- **Release workflow first-publish noise on npm 11.** The first publish of `pi-rolecast@0.3.0` via OIDC trusted publishing succeeded (tarball uploaded, provenance attestation published to sigstore), but `npm publish` then printed `E404 Not Found` from a follow-up HEAD/PUT verification call and exited 1. The package was already live; the workflow step ran red despite a successful publish. Added a `Verify publish succeeded` step that runs only on publish failure, queries `npm view pi-rolecast@<tag> version`, and treats a live version as success. Genuine failures (auth, network, version conflict) still propagate the original exit code. Verified by re-running on v0.3.1.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added
