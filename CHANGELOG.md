@@ -48,6 +48,10 @@ The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 �
 
 - **v0.3.6's bypass-tool-cache flag did not actually swap npm.** Even with `bypass-tool-cache: true`, the workflow still reported `npm info using npm@10.9.9`. The setup-node@v4 cache mechanism restores the bundled npm regardless of the npm-version pin in some runner configurations. v0.3.7 replaces the npm-version approach with an explicit `npm install -g npm@11.5.0` step after setup-node, which forces the bundled npm to be replaced with the OIDC-capable version. Also removed the `cache: npm` option to avoid any cache-related surprises.
 
+### Verified
+
+- **First successful release under the OIDC trusted publishing + robust gate pipeline.** Verbose publish log shows the full OIDC flow: `GET /idtoken 200` → `POST /-/npm/v1/oidc/token/exchange/package/pi-rolecast 201` → `GET /pi-rolecast 200` → `PUT /pi-rolecast 202`. `npm view pi-rolecast@0.3.7` confirms the version is live; maintainer field reads `GitHub Actions <npm-oidc-no-reply@github.com>`, matching npm 11's OIDC exchange response. Provenance attestation at sigstore logIndex=3077530501. All previous v0.3.x publishes (v0.3.1–v0.3.6) were non-publishes — the npm 10 E404 pattern was incorrectly diagnosed as noise for v0.3.0; this release is the first where the publish actually committed.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added
