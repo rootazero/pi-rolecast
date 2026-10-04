@@ -30,6 +30,12 @@ The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 �
 
 - **Release workflow verify step queried with the `v` prefix.** `${{ github.ref_name }}` returns `v0.3.3` (with the `v` prefix). `npm view pi-rolecast@v0.3.3` therefore queried for a version literally named `v0.3.3`, which never matches the published `0.3.3` on the registry. The verify step would always exit 1 even when the actual publish had succeeded. v0.3.3 publish was correctly diagnosed as a genuine failure thanks to this fix surfacing the problem; v0.3.4 strips the leading `v` before calling `npm view`. Added `NPM_CONFIG_LOGLEVEL=verbose` to the publish step so the actual HTTP requests are visible in the workflow log for diagnosing future E404 noise.
 
+## [0.3.5] — 2026-10-05
+
+### Fixed
+
+- **Release workflow used npm 10.9.9 which lacks OIDC trusted publishing support.** The verbose log from the v0.3.4 run revealed `npm info using npm@10.9.9` — the default npm bundled with Node 22 on GitHub Actions runners. npm 10 does not know how to use the `ACTIONS_ID_TOKEN_REQUEST_TOKEN` for OIDC, so it publishes against an empty `NODE_AUTH_TOKEN` and npmjs.com returns `404 Not Found` (pretending the package doesn't exist rather than leaking auth state). The v0.3.0 publish succeeded by luck — first-publish noise on npmjs.com allows a one-time grace where the tarball upload is committed even though the metadata PUT fails. Subsequent publishes hit the strict path and fail. v0.3.5 pins `npm-version: 11.5.0` in `actions/setup-node@v4`, which is the first npm version with native OIDC trusted publishing support. Combined with v0.3.4's verify-step fix, the publish gate now reports true success.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added

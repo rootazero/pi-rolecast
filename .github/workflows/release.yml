@@ -32,6 +32,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          # npm 11+ is required for OIDC trusted publishing (npm 10 ships
+          # with Node 22 and does not know how to use the GH Actions
+          # id-token; without it, npm publishes against an empty
+          # NODE_AUTH_TOKEN and npmjs.com returns E404 'package not in
+          # registry'). This pins a known-good npm version.
+          npm-version: 11.5.0
           cache: npm
           registry-url: https://registry.npmjs.org/
 
