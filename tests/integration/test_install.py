@@ -8,7 +8,9 @@ EXAMPLE_PROFILE = Path(__file__).resolve().parents[2] / "examples" / "rust" / "p
 
 def test_install_creates_framework_dir_and_symlinks(tmp_path):
     """v0.2.0: install creates ~/.pi/agent/pi-rolecast symlink + per-role
-    symlinks at agents/<group>-<role>.md for every role in role-packs/."""
+    symlinks at agents/<group>-<role>.md for every role in role-packs/.
+    Also creates legacy <role>.md compat shims for filename-keyed extensions
+    (e.g. bundled pi-cc-extensions)."""
     prefix = tmp_path / "agent"
     prefix.mkdir()
     fw_root = Path(__file__).resolve().parents[2]
@@ -20,7 +22,7 @@ def test_install_creates_framework_dir_and_symlinks(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (prefix / "pi-rolecast").exists(), \
         f"missing pi-rolecast symlink: {prefix / 'pi-rolecast'}"
-    # Per-role symlinks under agents/<group>-<role>.md
+    # v0.2.0+ prefixed symlinks under agents/<group>-<role>.md
     for role in ["coding-orchestrator", "coding-architect", "coding-planner",
                  "coding-implementer", "coding-tester", "coding-reviewer",
                  "coding-mapper", "coding-profiler", "coding-auditor",
@@ -30,6 +32,15 @@ def test_install_creates_framework_dir_and_symlinks(tmp_path):
         target = link.resolve()
         assert target == (fw_root / "role-packs" / "coding" / f"{role}.md").resolve(), \
             f"wrong target for {role}: {target}"
+    # Legacy compat shims under agents/<role>.md (no group prefix) for coding roles.
+    for legacy_role in ["architect", "planner", "implementer", "tester", "reviewer",
+                        "mapper", "profiler", "auditor", "canary", "docs"]:
+        legacy_link = prefix / "agents" / f"{legacy_role}.md"
+        assert legacy_link.is_symlink(), \
+            f"missing legacy compat symlink for {legacy_role}: {legacy_link}"
+        # Legacy symlink target points to the prefixed role-pack file (NOT a separate copy).
+        assert legacy_link.resolve() == (fw_root / "role-packs" / "coding" / f"coding-{legacy_role}.md").resolve(), \
+            f"legacy compat target wrong for {legacy_role}: {legacy_link.resolve()}"
 
 
 def test_install_dry_run_does_not_write(tmp_path):

@@ -58,17 +58,38 @@ fi
 # Global role symlinks for every role-packs/<group>/<role>.md.
 agents_dir="$PREFIX/agents"
 mkdir -p "$agents_dir"
+# Clean up ANY pre-existing symlinks pointing at the legacy framework root.
+# Old symlinks would dangle after `pi-agent-workflow` is removed; clean first.
+if [[ -d "$agents_dir" ]]; then
+  while IFS= read -r stale; do
+    target="$(readlink "$stale" 2>/dev/null || true)"
+    if [[ -n "$target" && "$target" == *pi-agent-workflow* ]]; then
+      rm -f "$stale"
+    fi
+  done < <(find "$agents_dir" -maxdepth 1 -type l -name '*.md')
+fi
 linked=0
 while IFS= read -r md; do
-  role=$(basename "$md" .md)
+  role=$(basename "$md" .md)        # e.g. "coding-architect"
+  bare="${role#coding-}"           # legacy compat name e.g. "architect" (for coding group)
   link_path="$agents_dir/$role.md"
   if [[ -L "$link_path" ]]; then
     rm -f "$link_path"
   fi
   ln -s "$md" "$link_path"
   linked=$((linked + 1))
+  # Legacy shim: create <bare-role>.md symlink for extensions that key
+  # off filename (e.g. bundled pi-cc-extensions). Removed in v0.3.0.
+  if [[ "$role" == "$bare" ]]; then
+    continue                        # safety: if role had no group prefix, skip
+  fi
+  legacy_link="$agents_dir/$bare.md"
+  if [[ ! -L "$legacy_link" && ! -e "$legacy_link" ]]; then
+    ln -s "$md" "$legacy_link"
+    linked=$((linked + 1))
+  fi
 done < <(find "$FRAMEWORK_ROOT/role-packs" -type f -name '*.md' 2>/dev/null | sort)
-echo "linked $linked role agents from role-packs/"
+echo "linked $linked role agents from role-packs/ (incl. legacy compat shims)"
 
 # Warn if pi-subagents is missing — required for actual role dispatch.
 SETTINGS_JSON="$PREFIX/settings.json"

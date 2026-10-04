@@ -1,5 +1,5 @@
 /**
- * Smoke test for the pi-agent-workflow Pi extension.
+ * Smoke test for the pi-rolecast Pi extension.
  *
  * Calls the extension factory with a mock ExtensionAPI and asserts that the
  * expected tools, slash commands, and event hooks are registered. Does not
