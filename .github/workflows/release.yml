@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Single concurrency group across all tag builds — never run two publishes
+# in parallel for the same package.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# OIDC trusted publishing (npm): id-token: write is required so npm can
+# mint provenance attestations without a long-lived NPM_TOKEN secret.
+# Configure trusted publisher on https://www.npmjs.com/package/pi-rolecast/access
+# (Publishing access -> Trusted Publishers -> Add GitHub Actions) with:
+#   Repository: rootazero/pi-rolecast
+#   Workflow filename: release.yml
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build, test, and publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test (Node)
+        run: npm test
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Test (Python)
+        run: pytest tests/unit/ -v
+
+      - name: Publish to npm
+        # OIDC trusted publishing: npm auto-mints a provenance attestation
+        # from the workflow's id-token; no NPM_TOKEN secret required.
+        # If trusted publishing is NOT yet configured on npmjs.com, set the
+        # NPM_TOKEN secret and uncomment the env: line below to fall back
+        # to classic token auth.
+        run: npm publish --access public --provenance
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
