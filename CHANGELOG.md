@@ -24,6 +24,12 @@ The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 �
 
 - **Release workflow verify step still skipped after the v0.3.2 conclusion-based fix.** v0.3.2 switched the conditional from `outcome` to `conclusion`, but the step API still reports the verify step as `skipped` on every publish attempt (verified via the v0.3.2 release run). The conditional evidently never evaluates to `true` despite the publish step's `conclusion` being `failure`. Replaced the conditional approach with `if: always()` on the verify step and `continue-on-error: true` on the publish step. The verify step now reads the publish outcome via the `steps.publish.outcome` env var (which IS reliably populated), short-circuits to success when the publish step itself reports success, and only consults `npm view` when the publish step reported a non-success outcome. This guarantees the version-on-npm gate fires on every publish. v0.3.3 is also a non-publish for the same noise reason (E404 + sigstore log published + version never on registry); v0.3.4 will be the first release published under the corrected gate.
 
+## [0.3.4] — 2026-10-05
+
+### Fixed
+
+- **Release workflow verify step queried with the `v` prefix.** `${{ github.ref_name }}` returns `v0.3.3` (with the `v` prefix). `npm view pi-rolecast@v0.3.3` therefore queried for a version literally named `v0.3.3`, which never matches the published `0.3.3` on the registry. The verify step would always exit 1 even when the actual publish had succeeded. v0.3.3 publish was correctly diagnosed as a genuine failure thanks to this fix surfacing the problem; v0.3.4 strips the leading `v` before calling `npm view`. Added `NPM_CONFIG_LOGLEVEL=verbose` to the publish step so the actual HTTP requests are visible in the workflow log for diagnosing future E404 noise.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added

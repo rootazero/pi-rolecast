@@ -73,6 +73,12 @@ jobs:
         # from a genuine publish failure. Without it the workflow aborts
         # before we get to npm view.
         continue-on-error: true
+        env:
+          # Verbose logging surfaces the actual HTTP requests npm CLI makes.
+          # Useful for diagnosing E404 'package not found' from npm 11 OIDC
+          # trusted publishing where the package may or may not actually
+          # land on the registry.
+          NPM_CONFIG_LOGLEVEL: verbose
         run: npm publish --access public --provenance
         # env:
         #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -91,6 +97,11 @@ jobs:
       - name: Verify publish succeeded
         if: always()
         env:
+          # Strip the leading 'v' from ${{ github.ref_name }} (e.g. v0.3.3 → 0.3.3).
+          # npm's dist-tag/version specifier parser treats `pkg@v0.3.3` as a
+          # request for a version literally named `v0.3.3`, which never
+          # matches the published `0.3.3`. The actual published versions
+          # on registry.npmjs.org never have the leading 'v'.
           VERSION: ${{ github.ref_name }}
           PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
         run: |
@@ -98,7 +109,8 @@ jobs:
             echo "Publish step reported success; no verification needed."
             exit 0
           fi
-          echo "Publish step reported '$PUBLISH_OUTCOME'; checking whether version is actually live (npm 11 first-publish noise workaround)."
+          VERSION="${VERSION#v}"
+          echo "Publish step reported '$PUBLISH_OUTCOME'; checking whether version ${VERSION} is actually live (npm 11 first-publish noise workaround)."
           sleep 10
           if npm view "pi-rolecast@${VERSION}" version; then
             echo "::notice::Version ${VERSION} is live on npm; treating publish step as success despite E404 noise."
