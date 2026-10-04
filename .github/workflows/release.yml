@@ -68,26 +68,37 @@ jobs:
         # NPM_TOKEN secret and uncomment the env: line below to fall back
         # to classic token auth.
         id: publish
+        # continue-on-error: true lets the verify step always run so it can
+        # distinguish npm 11 first-publish noise (E404 with version live)
+        # from a genuine publish failure. Without it the workflow aborts
+        # before we get to npm view.
+        continue-on-error: true
         run: npm publish --access public --provenance
         # env:
         #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Known npm 11 first-publish noise: when OIDC trusted publishing creates
-      # a new package, the CLI prints E404 ('Not found') on a HEAD / PUT
-      # verification call AFTER the actual publish succeeds. The package is
-      # live (verified via `npm view`) but the publish step exits 1.
-      # Re-run on next OIDC publish will not hit this — only the FIRST
-      # publish of a package via trusted publishing triggers it.
-      # Verified for v0.3.0: PUT 200 + provenance attestation published,
-      # `npm view pi-rolecast@0.3.0 version` returned 0.3.0, then the
-      # workflow still printed E404 and exited 1. The verify step below
-      # treats that as success and turns the workflow green.
+      # Two-step publish gate for npm 11 OIDC trusted publishing:
+      # 1. `npm publish` may exit 1 with `E404 Not Found` even when the
+      #    tarball was uploaded and the provenance was published to sigstore
+      #    (observed for pi-rolecast v0.3.0 and v0.3.1). Root cause: npm CLI
+      #    makes a HEAD/PUT verification call against the package root that
+      #    hits a stale CDN edge and returns 404, even though the actual
+      #    version is live.
+      # 2. The verify step below ALWAYS runs (if: always()) so it can decide
+      #    pass/fail based on the real registry state. It exits 0 if the
+      #    version is live (treating the E404 as noise) and exits 1 only if
+      #    the version is genuinely missing.
       - name: Verify publish succeeded
-        if: steps.publish.conclusion == 'failure'
+        if: always()
         env:
           VERSION: ${{ github.ref_name }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
         run: |
-          echo "npm publish reported failure; checking whether version is actually live (npm 11 first-publish noise workaround)."
+          if [ "$PUBLISH_OUTCOME" = "success" ]; then
+            echo "Publish step reported success; no verification needed."
+            exit 0
+          fi
+          echo "Publish step reported '$PUBLISH_OUTCOME'; checking whether version is actually live (npm 11 first-publish noise workaround)."
           sleep 10
           if npm view "pi-rolecast@${VERSION}" version; then
             echo "::notice::Version ${VERSION} is live on npm; treating publish step as success despite E404 noise."

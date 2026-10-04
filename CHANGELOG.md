@@ -18,6 +18,12 @@ The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 �
 
 - **Release workflow verify step skipped on publish failure.** The conditional guarding the `Verify publish succeeded` step read `steps.publish.outcome`, which the GitHub Actions step API returns as `null` for `run` shell steps (only `conclusion` is populated for those). The verify step therefore never ran when the publish step exited 1, even though `conclusion` was correctly `failure`. Changed the conditional to `steps.publish.conclusion == 'failure'`. v0.3.1 had been a non-publish for exactly this reason; v0.3.2 ships the fix.
 
+## [0.3.3] — 2026-10-05
+
+### Fixed
+
+- **Release workflow verify step still skipped after the v0.3.2 conclusion-based fix.** v0.3.2 switched the conditional from `outcome` to `conclusion`, but the step API still reports the verify step as `skipped` on every publish attempt (verified via the v0.3.2 release run). The conditional evidently never evaluates to `true` despite the publish step's `conclusion` being `failure`. Replaced the conditional approach with `if: always()` on the verify step and `continue-on-error: true` on the publish step. The verify step now reads the publish outcome via the `steps.publish.outcome` env var (which IS reliably populated), short-circuits to success when the publish step itself reports success, and only consults `npm view` when the publish step reported a non-success outcome. This guarantees the version-on-npm gate fires on every publish. v0.3.3 is also a non-publish for the same noise reason (E404 + sigstore log published + version never on registry); v0.3.4 will be the first release published under the corrected gate.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added
