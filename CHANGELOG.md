@@ -42,6 +42,12 @@ The v0.3.1 publish attempt ran into the same `E404 Not Found` noise as v0.3.0 �
 
 - **v0.3.5's npm-version pin was silently ignored.** setup-node@v4 ignores `npm-version` unless `bypass-tool-cache: true` is also set, so the workflow continued to use npm 10.9.9 and the publish still failed with the same E404 pattern. v0.3.6 adds `bypass-tool-cache: true` to the setup-node step so the npm 11 pin actually takes effect.
 
+## [0.3.7] — 2026-10-05
+
+### Fixed
+
+- **v0.3.6's bypass-tool-cache flag did not actually swap npm.** Even with `bypass-tool-cache: true`, the workflow still reported `npm info using npm@10.9.9`. The setup-node@v4 cache mechanism restores the bundled npm regardless of the npm-version pin in some runner configurations. v0.3.7 replaces the npm-version approach with an explicit `npm install -g npm@11.5.0` step after setup-node, which forces the bundled npm to be replaced with the OIDC-capable version. Also removed the `cache: npm` option to avoid any cache-related surprises.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added

@@ -32,17 +32,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          # npm 11+ is required for OIDC trusted publishing (npm 10 ships
+          # npm 11+ is required for OIDC trusted publishing. npm 10 ships
           # with Node 22 and does not know how to use the GH Actions
           # id-token; without it, npm publishes against an empty
           # NODE_AUTH_TOKEN and npmjs.com returns E404 'package not in
-          # registry'). bypass-tool-cache is required to actually swap
-          # the bundled npm for the pinned version (otherwise setup-node
-          # ignores the pin).
-          npm-version: 11.5.0
-          cache: npm
+          # registry'. setup-node ignores npm-version unless cache is
+          # disabled, so the explicit npm install step below forces the
+          # swap after setup-node finishes.
           registry-url: https://registry.npmjs.org/
-          bypass-tool-cache: true
+
+      - name: Install npm 11
+        run: npm install -g npm@11.5.0
 
       - name: Install dependencies
         run: npm ci
