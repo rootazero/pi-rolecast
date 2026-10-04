@@ -36,10 +36,13 @@ jobs:
           # with Node 22 and does not know how to use the GH Actions
           # id-token; without it, npm publishes against an empty
           # NODE_AUTH_TOKEN and npmjs.com returns E404 'package not in
-          # registry'). This pins a known-good npm version.
+          # registry'). bypass-tool-cache is required to actually swap
+          # the bundled npm for the pinned version (otherwise setup-node
+          # ignores the pin).
           npm-version: 11.5.0
           cache: npm
           registry-url: https://registry.npmjs.org/
+          bypass-tool-cache: true
 
       - name: Install dependencies
         run: npm ci
