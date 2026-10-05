@@ -4,10 +4,13 @@ The framework's profile bindings (alias -> model + channel) need to reach the ac
 
 ## What it writes
 
-When you run sync_settings against a project with a profile, two things happen:
+When you run sync_settings against a project with a profile, the **default** behaviour is:
 
-1. **settings.json** — `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<full-role-name>.{model,channel}` for each bound role. (Pi core does not currently read this key for dispatch; it is kept for parity with prior skills and debugging.)
-2. **Project-local agent files** — `<project>/.pi/agents/<group>-<role>.md` is written with `model:` and `thinking:` frontmatter set from your binding. The full role name matches the binding key so pi-subagents can find it via `@<full-role-name>` mention syntax or `subagent_type: "<full-role-name>"`.
+1. **Project-local agent files** — `<project>/.pi/agents/<group>-<role>.md` is written with `model:` and `thinking:` frontmatter set from your binding. The full role name matches the binding key so pi-subagents can find it via `@<full-role-name>` mention syntax or `subagent_type: "<full-role-name>"`. This is the **authoritative dispatch path**.
+
+**Opt-in** (off by default since v0.4.0):
+
+2. **settings.json** — `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<full-role-name>.{model,channel}` for each bound role. Pi core does not read this key for dispatch; it is kept for parity with prior skills and for any third-party extension that still consults it. Pass `--settings-write` to emit it.
 
 ## Commands
 
@@ -20,8 +23,9 @@ python3 $SKILL_ROOT/scripts/sync_settings.py \
 Useful flags:
 - `--status` — show current sync state vs profile bindings; flags `DRIFT` if a project-local agent file's model field was manually edited away from the binding. Exits 0 regardless (informational only).
 - `--dry-run` — print what would be written without touching disk.
-- `--clear` — remove all `agentOverrides` from settings.json and delete every project-local agent file. User-made files and symlinks in the agents dir are preserved.
-- `--no-settings` / `--no-agents` — skip settings.json / project-local agent files respectively.
+- `--clear` — scrub framework entries from settings.json (when present) and delete every project-local agent file. User-made files and symlinks in the agents dir are preserved.
+- `--settings-write` — also write `subagents.agentOverrides` into `settings.json` (default: skip; project-local agent files are authoritative).
+- `--no-agents` — skip writing project-local agent files (e.g. for settings-write only).
 - `--agents-dir <path>` — override the default `.pi/agents/` location.
 - `--settings <path>` — override `~/.pi/agent/settings.json`.
 - `--list-groups` — list available role groups from `role-packs/` and exit.

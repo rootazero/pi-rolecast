@@ -107,6 +107,42 @@ fi
 
 echo "install complete"
 
+# User-global registry/aliases override dir (v0.2.0+).
+# Lazy-create + drop a stub README so users can discover this extension point
+# without reading the docs. Idempotent: never overwrites existing files.
+rolecast_dir="$HOME/.pi/rolecast"
+if [[ ! -d "$rolecast_dir" ]]; then
+  mkdir -p "$rolecast_dir"
+  echo "created $rolecast_dir (user-global registry/aliases override dir)"
+fi
+if [[ ! -f "$rolecast_dir/README.md" ]]; then
+  cat > "$rolecast_dir/README.md" <<'ROLECAST_README_EOF'
+# ~/.pi/rolecast/
+
+User-global overrides for the pi-rolecast registry and alias layers.
+
+Drop any of these files here to override the built-in defaults ACROSS every
+project on this machine (project-local `<project>/.pi/rolecast-registry.yaml`
+still wins for the project that defines it):
+
+- `registry-overrides.yaml`  — add/override model entries (vendor, capabilities, channels, cost_tier, status).
+- `aliases-overrides.yaml`   — add/override alias → model-id mappings.
+
+Merge order (later wins):
+
+  built-in (role-packs/registry/{built_in,aliases}.yaml)
+    → user-global (this dir)
+    → project-local (<project>/.pi/rolecast-registry.yaml)
+
+Missing files or missing dir are silent no-ops; dispatch still works.
+Full schema: see `references/registry-resolution.md` in the pi-rolecast source.
+
+This README is a stub written on first run. Delete it anytime — it has no
+runtime effect.
+ROLECAST_README_EOF
+  echo "wrote $rolecast_dir/README.md (stub; overwrite or delete freely)"
+fi
+
 # Sync profile bindings to pi dispatch config + project-local agent files
 # if a profile is found in cwd (new filename preferred, legacy accepted).
 profile_path=""
@@ -117,7 +153,7 @@ elif [[ -f "./.pi/agent-workflow.yaml" ]]; then
   echo "warning: .pi/agent-workflow.yaml is the legacy v0.1.x filename; rename to .pi/rolecast.yaml"
 fi
 if [[ -n "$profile_path" ]]; then
-  echo "found $profile_path in cwd; syncing to settings.json + .pi/agents/"
+  echo "found $profile_path in cwd; syncing to .pi/agents/ (project-local, authoritative)"
   python3 "$FRAMEWORK_ROOT/scripts/sync_settings.py" \
     --profile "$profile_path" \
     --framework-root "$FRAMEWORK_ROOT" || \
@@ -126,3 +162,7 @@ else
   echo "next: scaffold a profile in your project with:"
   echo "  python3 \$SKILL_ROOT/scripts/scaffolder.py init --template rust"
 fi
+
+# Closing hint — surfaces the two most common extension points (project-local
+# agent files + user-global overrides). Shown unconditionally.
+echo "Tip: pi-rolecast installed. Project-local agent files: $PREFIX/agents/ (authoritative for dispatch). User-global overrides: ~/.pi/rolecast/ — drop {registry,aliases}-overrides.yaml here. Docs: references/sync-settings-usage.md, references/registry-resolution.md"

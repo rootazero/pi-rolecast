@@ -59,7 +59,8 @@ def test_list_groups_lists_coding(tmp_path):
 
 
 def test_sync_writes_role_overrides(tmp_settings):
-    r = _run([], tmp_settings)
+    """--settings-write opt-in emits subagents.agentOverrides into settings.json."""
+    r = _run(["--settings-write"], tmp_settings)
     assert r.returncode == 0, r.stderr
     data = json.loads(tmp_settings.read_text())
     overrides = data["subagents"]["agentOverrides"]
@@ -72,6 +73,16 @@ def test_sync_writes_role_overrides(tmp_settings):
     assert overrides["coding-tester"]["model"] == "deepseek-v4.1-flash"
 
 
+def test_sync_default_skips_settings_write(tmp_settings):
+    """Default behaviour: project-local agent files are authoritative; settings.json is left alone."""
+    original = tmp_settings.read_text()
+    r = _run([], tmp_settings)
+    assert r.returncode == 0, r.stderr
+    # settings.json untouched.
+    assert tmp_settings.read_text() == original
+    assert "synced:" in r.stdout  # still emits a summary line
+
+
 def test_sync_dry_run_does_not_write(tmp_settings):
     original = tmp_settings.read_text()
     r = _run(["--dry-run"], tmp_settings)
@@ -81,12 +92,13 @@ def test_sync_dry_run_does_not_write(tmp_settings):
 
 
 def test_sync_preserves_non_framework_overrides(tmp_settings):
+    """--settings-write merges with existing settings.json entries (does not drop user roles)."""
     tmp_settings.write_text(json.dumps({
         "subagents": {"agentOverrides": {
             "other-extension-role": {"model": "some-model", "channel": "x"},
         }}
     }))
-    r = _run([], tmp_settings)
+    r = _run(["--settings-write"], tmp_settings)
     assert r.returncode == 0
     data = json.loads(tmp_settings.read_text())
     overrides = data["subagents"]["agentOverrides"]
@@ -198,13 +210,14 @@ def test_sync_dry_run_does_not_write_agent_files(tmp_path):
 
 
 def test_sync_no_agents_skips_agent_files(tmp_path):
+    """--no-agents skips project-local agent files but still writes settings.json when opted in."""
     agents_dir = tmp_path / ".pi" / "agents"
     settings = tmp_path / "settings.json"
     settings.write_text("{}")
     r = subprocess.run(
         [sys.executable, str(SCRIPT), "--profile", str(EXAMPLE_PROFILE),
          "--settings", str(settings), "--agents-dir", str(agents_dir),
-         "--no-agents"],
+         "--no-agents", "--settings-write"],
         capture_output=True, text=True,
     )
     assert r.returncode == 0

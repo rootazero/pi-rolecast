@@ -3,18 +3,22 @@
 
 Sync profile model bindings to pi dispatch config.
 
-Two outputs:
+Output (default):
 
-1. **settings.json** (`~/.pi/agent/settings.json` or --settings path):
-   writes `subagents.agentOverrides.<full-role-name>` entries for each
-   binding. This is a soft hint used by some third-party extensions.
+  **project-local agent files** (`.pi/agents/<full-role-name>.md` in cwd):
+  copies each role-packs/<group>/<role>.md template and overwrites its
+  `model:` and `thinking:` frontmatter fields with the bound values.
+  This is the authoritative dispatch path: the **pi-subagents**
+  extension reads `.pi/agents/<name>.md` (project) before any global
+  fallback and honours `model:` and `thinking:` frontmatter fields.
 
-2. **project-local agent files** (`.pi/agents/<full-role-name>.md` in cwd):
-   copies each role-packs/<group>/<role>.md template and overwrites its
-   `model:` and `thinking:` frontmatter fields with the bound values.
-   This is the authoritative dispatch path: the **pi-subagents**
-   extension reads `.pi/agents/<name>.md` (project) before any global
-   fallback and honours `model:` and `thinking:` frontmatter fields.
+Optional output (opt-in via `--settings-write`):
+
+  **settings.json** (`~/.pi/agent/settings.json` or --settings path):
+  writes `subagents.agentOverrides.<full-role-name>` entries for each
+  binding. NOT the authoritative dispatch path; kept only for parity
+  with earlier skill designs and for any third-party extension that
+  still reads it. Default is skip.
 
 v0.2.0 changes:
   * Walks role-packs/<group>/<role>.md instead of hardcoded CORE_ROLES.
@@ -105,13 +109,18 @@ def main() -> int:
                         default=Path.cwd() / ".pi" / "agents",
                         help="project-local agent directory (default: .pi/agents)")
     parser.add_argument("--clear", action="store_true",
-                        help="remove framework role entries from settings.json and delete "
-                             "project-local agent files written by sync")
+                        help="scrub framework entries from settings.json (when written) and "
+                             "delete project-local agent files written by sync")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-agents", action="store_true",
                         help="skip writing project-local agent files (settings.json only)")
-    parser.add_argument("--no-settings", action="store_true",
-                        help="skip writing settings.json (agent files only)")
+    # settings.json writes are NOT the authoritative dispatch path. Project-local
+    # agent files (.pi/agents/*.md) are read by pi-subagents and win over any
+    # global settings.json hint. Default is to skip the settings.json write;
+    # pass --settings to opt in.
+    parser.add_argument("--settings-write", action="store_true",
+                        help="also write subagents.agentOverrides to settings.json "
+                             "(default: skip; project-local agent files are authoritative)")
     parser.add_argument("--status", action="store_true",
                         help="show current sync state vs profile bindings (no changes)")
     parser.add_argument("--list-groups", action="store_true",
@@ -132,6 +141,8 @@ def main() -> int:
 
     if args.clear:
         # --clear is a standalone cleanup operation — does NOT need a profile.
+        # Always scrub settings.json when explicitly clearing, regardless of
+        # the default settings-write flag.
         rc1 = _clear_settings(args.settings, args.dry_run)
         rc2 = _clear_agents(args.agents_dir, args.framework_root, args.dry_run)
         return rc1 or rc2
@@ -167,11 +178,16 @@ def main() -> int:
                             args.framework_root, new_overrides)
 
     rc1 = rc2 = 0
-    if not args.no_settings:
+    written_to = []
+    if args.settings_write:
         rc1 = _merge_and_write(args.settings, new_overrides, args.dry_run)
+        written_to.append("settings.json")
     if not args.no_agents:
         rc2 = _write_agents(args.agents_dir, args.framework_root, profile.workflow.role_groups,
                             new_overrides, args.dry_run, registry)
+        written_to.append(str(args.agents_dir))
+    if written_to:
+        print("synced: " + ", ".join(written_to))
     return rc1 or rc2
 
 

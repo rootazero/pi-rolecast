@@ -4,6 +4,18 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-05
+
+### Changed
+
+- **`sync_settings.py` no longer writes `settings.json` by default.** The `--no-settings` flag has been replaced by `--settings-write` (off by default). Rationale: pi-subagents reads the project-local `<project>/.pi/agents/<group>-<role>.md` `model:` and `thinking:` frontmatter as the authoritative dispatch surface; `settings.json`'s `subagents.agentOverrides` is a soft hint used by some third-party extensions and was kept there for parity. New default behavior is project-local agent files only, with `settings.json` available on opt-in for extensions that still read it. The `--clear` flag still always scrubs framework entries from `settings.json` regardless of whether the most recent sync wrote there. `install.sh` picks up the new default without changes.
+
+- **`install.sh` now lazily creates `~/.pi/rolecast/` with a stub README on first run.** The user-global registry/aliases override directory was introduced in v0.2.0 and `profile_loader.py:573-588` reads it via `_user_global_dir()`, but nothing ever created the directory for the user — new users had to read `references/registry-resolution.md` to discover the extension point. `install.sh` now `mkdir -p`'s the dir if it is missing and drops a short `README.md` explaining the two valid override filenames (`registry-overrides.yaml`, `aliases-overrides.yaml`), the merge order, and the silent-skip semantics. Both creation steps are idempotent and never overwrite existing files. A new closing Tip line prints after every install run to surface the two most common extension points (project-local agent files + user-global overrides) and the relevant docs.
+
+### Fixed
+
+- **`gate_runner.py` default log directory was still `.pi/agent-workflow-logs/` (pre-v0.2.0 name).** When `scripts/gate_runner.py` was refactored in v0.2.0 to read `.pi/rolecast.yaml` and `.pi/rolecast-registry.yaml`, the `--log-dir` default at line ~34 was left pointing at the old `.pi/agent-workflow-logs/` path. Running any gate without an explicit `--log-dir` would resurrect the legacy dir on every invocation and bury the new `.pi/rolecast-logs/` next to it. Corrected to match `references/migration-from-rust-agent-workflow.md` and `references/gate-runner-usage.md`.
+
 ## [0.4.0] — 2026-10-04
 
 ### Changed

@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run profile gates in declared order.")
     p.add_argument("--profile", required=True, help="Path to agent-workflow.yaml")
     p.add_argument("--phase", default="all", help="Phase name or 'all'")
-    p.add_argument("--log-dir", default=".pi/agent-workflow-logs",
+    p.add_argument("--log-dir", default=".pi/rolecast-logs",
                    help="Where to write per-phase logs")
     p.add_argument("--framework-root", default=None,
                    help="Framework root for registry resolution")
