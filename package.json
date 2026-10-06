@@ -1,6 +1,6 @@
 {
   "name": "pi-rolecast",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Multi-agent role framework for Pi. Groups of specialist agents (coding, video, etc.) bound to per-role models, dispatched via pi-subagents. Profile-driven, gate-verified, language-agnostic.",
   "type": "module",
   "license": "MIT",
@@ -66,6 +66,7 @@
     ]
   },
   "devDependencies": {
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.0"
   }
 }
