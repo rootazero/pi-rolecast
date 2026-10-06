@@ -45,6 +45,11 @@ import {
 	type DumpBindingsResult,
 } from "./dump_bindings.js";
 import {
+	diffProfile,
+	scaffoldInit,
+	validateProfile,
+} from "./scaffolder.js";
+import {
 	resolveModel,
 	type CapabilityPreference,
 	type CapabilityRequirement,
@@ -177,14 +182,19 @@ const scaffolderInitTool = defineTool({
 		),
 	}),
 	async execute(_id, params, _signal, _onUpdate, _ctx) {
-		const args = ["init"];
-		if (params.template) args.push("--template", params.template);
-		if (params.force) args.push("--force");
-		if (params.dry_run) args.push("--dry-run");
-		const result = await runPythonScript("scaffolder.py", args);
+		const cwd = _ctx?.cwd ?? process.cwd();
+		const r = scaffoldInit({
+			projectRoot: cwd,
+			frameworkRoot: FRAMEWORK_ROOT,
+			template: params.template ?? null,
+			blank: params.template === "blank",
+			dryRun: params.dry_run === true,
+			force: params.force === true,
+		});
+		const details = { ok: r.ok, profilePath: r.profilePath, template: r.template };
 		return {
-			content: [{ type: "text", text: summarize(result) }],
-			details: { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr },
+			content: [{ type: "text", text: r.message }],
+			details,
 		};
 	},
 });
@@ -213,12 +223,20 @@ const scaffolderValidateTool = defineTool({
 		),
 	}),
 	async execute(_id, params, _signal, _onUpdate, _ctx) {
-		const args = ["validate"];
-		if (params.profile_path) args.push("--profile", params.profile_path);
-		const result = await runPythonScript("scaffolder.py", args);
+		const profilePath = params.profile_path ?? findProjectProfile(_ctx?.cwd ?? process.cwd());
+		if (profilePath === null) {
+			return {
+				content: [{ type: "text", text: "profile not found in .pi/ (rolecast.yaml or legacy agent-workflow.yaml)" }],
+				details: { ok: false },
+			};
+		}
+		const r = validateProfile({
+			profilePath,
+			frameworkRoot: FRAMEWORK_ROOT,
+		});
 		return {
-			content: [{ type: "text", text: summarize(result) }],
-			details: { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr },
+			content: [{ type: "text", text: r.output }],
+			details: { ok: r.ok, profilePath },
 		};
 	},
 });
@@ -247,12 +265,20 @@ const scaffolderDiffTool = defineTool({
 		),
 	}),
 	async execute(_id, params, _signal, _onUpdate, _ctx) {
-		const args = ["diff"];
-		if (params.profile_path) args.push("--profile", params.profile_path);
-		const result = await runPythonScript("scaffolder.py", args);
+		const profilePath = params.profile_path ?? findProjectProfile(_ctx?.cwd ?? process.cwd());
+		if (profilePath === null) {
+			return {
+				content: [{ type: "text", text: "profile not found in .pi/ (rolecast.yaml or legacy agent-workflow.yaml)" }],
+				details: { ok: false },
+			};
+		}
+		const r = diffProfile({
+			profilePath,
+			frameworkRoot: FRAMEWORK_ROOT,
+		});
 		return {
-			content: [{ type: "text", text: summarize(result) }],
-			details: { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr },
+			content: [{ type: "text", text: r.output }],
+			details: { ok: r.ok, profilePath, profileVersion: r.profileVersion },
 		};
 	},
 });
@@ -528,19 +554,47 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 
 	// Slash commands mirror the tools for direct user invocation. Names use the
 // `rolecast-*` prefix (matches the package name).
-	const initHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+	const initHandler = async (args: string, ctx: { cwd?: string; ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
 		const parts = args.trim().split(/\s+/).filter(Boolean);
-		const pyArgs = ["init", ...parts];
-		const result = await runPythonScript("scaffolder.py", pyArgs);
-		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+		// Naive parse: --template X / --blank / --force / --dry-run
+		let template: string | null = null;
+		let blank = false;
+		let force = false;
+		let dryRun = false;
+		for (let i = 0; i < parts.length; i++) {
+			const p = parts[i]!;
+			if (p === "--template") template = parts[++i] ?? null;
+			else if (p === "--blank") blank = true;
+			else if (p === "--force") force = true;
+			else if (p === "--dry-run") dryRun = true;
+		}
+		const r = scaffoldInit({
+			projectRoot: ctx.cwd ?? process.cwd(),
+			frameworkRoot: FRAMEWORK_ROOT,
+			template,
+			blank,
+			force,
+			dryRun,
+		});
+		ctx.ui.notify(r.message, r.ok ? "info" : "error");
 	};
-	const validateHandler = async (_args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
-		const result = await runPythonScript("scaffolder.py", ["validate"]);
-		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	const validateHandler = async (_args: string, ctx: { cwd?: string; ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const profilePath = findProjectProfile(ctx.cwd ?? process.cwd());
+		if (profilePath === null) {
+			ctx.ui.notify("profile not found in .pi/", "error");
+			return;
+		}
+		const r = validateProfile({ profilePath, frameworkRoot: FRAMEWORK_ROOT });
+		ctx.ui.notify(r.output, r.ok ? "info" : "error");
 	};
-	const diffHandler = async (_args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
-		const result = await runPythonScript("scaffolder.py", ["diff"]);
-		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
+	const diffHandler = async (_args: string, ctx: { cwd?: string; ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const profilePath = findProjectProfile(ctx.cwd ?? process.cwd());
+		if (profilePath === null) {
+			ctx.ui.notify("profile not found in .pi/", "error");
+			return;
+		}
+		const r = diffProfile({ profilePath, frameworkRoot: FRAMEWORK_ROOT });
+		ctx.ui.notify(r.output, r.ok ? "info" : "error");
 	};
 	const runHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
 		const phase = args.trim();
