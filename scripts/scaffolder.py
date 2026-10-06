@@ -152,14 +152,16 @@ def _load_template(templates_dir: Path, lang: str) -> dict:
 
 
 def _blank_template() -> dict:
-    return {
-        "framework_version": "0.2.0",
-        "name": "",
-        "description": "",
-        "workflow": {"role_groups": []},
-        "gates": {},
-        "bindings": {},
-    }
+    # v0.4.3: load templates/blank.yaml instead of hardcoding empty
+    # name/description. The hardcoded dict produced profiles that failed
+    # parse_profile validation (profile.name is required), which surfaced
+    # as "failed to load bindings" warnings every time the user opened pi
+    # from a directory containing the bad profile. Loading the actual
+    # template keeps the blank scaffolder in lockstep with the file shipped
+    # in templates/, and ensures the generated profile always satisfies the
+    # schema.
+    framework_root = Path(__file__).resolve().parent.parent
+    return _load_template(framework_root / "templates", "blank")
 
 
 def _write_profile(path: Path, data: dict) -> None:

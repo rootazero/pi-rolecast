@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 from scripts.scaffolder import detect_language, auto_detect_languages
+from scripts.profile_loader import load_profile
 
 SCAFFOLDER = Path(__file__).resolve().parents[2] / "scripts" / "scaffolder.py"
 
@@ -147,6 +148,13 @@ def test_scaffolder_init_blank_template(tmp_path):
     assert result.returncode == 0
     written = (tmp_path / ".pi" / "rolecast.yaml").read_text()
     assert "bindings: {}" in written or "bindings: {}" in written.replace("\n", "")
+    # v0.4.3 regression: the blank template previously hardcoded empty
+    # name/description, which produced profiles that failed parse_profile
+    # validation. The generated profile must round-trip through load_profile.
+    profile_path = tmp_path / ".pi" / "rolecast.yaml"
+    loaded = load_profile(profile_path, framework_root=framework_root)
+    assert loaded.name  # non-empty placeholder, not ''
+    assert loaded.description  # non-empty placeholder, not ''
 
 
 def test_scaffolder_init_refuses_existing_without_force(tmp_path):

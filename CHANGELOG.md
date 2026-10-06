@@ -4,6 +4,12 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-10-06
+
+### Fixed
+
+- **`scaffolder.py init --blank` produced profiles that failed `load_profile` validation.** `_blank_template()` hardcoded `name: ""` and `description: ""` in the in-memory template dict. The dump output (framework_version 0.2.0 plus empty name/description plus empty bindings/gates) parses as a valid YAML mapping but trips the `profile.name is required` check in `parse_profile`. Surfaces at runtime as the session_start warning `pi-rolecast: failed to load bindings ({"error": "load_profile failed: profile.name is required"}). Dynamic binding disabled this session.` whenever the user opens pi in a directory containing such a profile (typically the home directory, where `find_profile(cwd)` picks up `~/.pi/rolecast.yaml`). Replaced the hardcoded dict with a call to `_load_template(framework_root / "templates", "blank")`, so the blank scaffolder now emits the same placeholders (`name: my-project`, `description: '(describe your workflow here)\n  '`) shipped in `templates/blank.yaml`. Single source of truth: the template file. Added a regression assertion to `tests/unit/test_scaffolder.py::test_scaffolder_init_blank_template` that round-trips the generated profile through `load_profile` and asserts `name`/`description` are non-empty. Users who already have a bad blank profile on disk can repair it by re-running `pi-rolecast-init --blank --project-root <dir> --force` (now produces a valid profile) or by editing `name:`/`description:` to non-empty values.
+
 ## [0.4.2] — 2026-10-05
 
 ### Added
