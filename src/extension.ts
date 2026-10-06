@@ -40,6 +40,11 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import {
+	dumpBindings,
+	type BindingPayload,
+	type DumpBindingsResult,
+} from "./dump_bindings.js";
+import {
 	resolveModel,
 	type CapabilityPreference,
 	type CapabilityRequirement,
@@ -315,14 +320,6 @@ function profileStatus(cwd: string): { exists: boolean; path: string } {
 
 // ---- Dynamic model binding (v0.3.0) ----
 
-interface BindingPayload {
-	alias: string;
-	channels: string[];
-	fallback_chain: string[];
-	requires: CapabilityRequirement;
-	preferences: CapabilityPreference;
-}
-
 interface BindingsSnapshot {
 	role_groups: string[];
 	bindings: Record<string, BindingPayload>;
@@ -333,31 +330,20 @@ interface BindingsSnapshot {
 let bindingsCache: BindingsSnapshot | null = null;
 let bindingsCacheCwd: string | null = null;
 
-async function loadBindings(cwd: string): Promise<BindingsSnapshot> {
-	const result = await runPythonScript(
-		"dump_bindings.py",
-		["--framework-root", FRAMEWORK_ROOT, "--cwd", cwd],
-		{ cwd, timeoutMs: 15_000 },
-	);
-	if (result.exitCode !== 0) {
-		return {
-			role_groups: [],
-			bindings: {},
-			loadError: (result.stderr || result.stdout || "dump_bindings.py failed").trim(),
-		};
-	}
-	try {
-		const parsed = JSON.parse(result.stdout || "{}");
-		if (parsed && typeof parsed === "object" && parsed.bindings && typeof parsed.bindings === "object") {
-			return {
-				role_groups: Array.isArray(parsed.role_groups) ? parsed.role_groups : [],
-				bindings: parsed.bindings as Record<string, BindingPayload>,
-			};
-		}
-		return { role_groups: [], bindings: {} };
-	} catch (e) {
-		return { role_groups: [], bindings: {}, loadError: `parse failed: ${(e as Error).message}` };
-	}
+function loadBindings(cwd: string): BindingsSnapshot {
+	// v0.5.0: pure TS path — no python3 subprocess. dumpBindings() reads
+	// .pi/rolecast.yaml directly via src/profile_loader.ts and returns the
+	// snapshot synchronously. No more "ModuleNotFoundError: No module named
+	// 'yaml'" traceback in the session_start warning.
+	const result: DumpBindingsResult = dumpBindings({
+		frameworkRoot: FRAMEWORK_ROOT,
+		cwd,
+	});
+	return {
+		role_groups: result.role_groups,
+		bindings: result.bindings,
+		loadError: result.loadError,
+	};
 }
 
 /**
