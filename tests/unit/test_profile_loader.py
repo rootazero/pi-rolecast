@@ -545,3 +545,126 @@ def test_role_def_requires_and_preferences_parsed(tmp_path, monkeypatch):
         }
     finally:
         role_md.write_text(original)
+
+
+def test_profile_loader_imports_without_pyyaml(monkeypatch):
+    # v0.4.4 regression. profile_loader must remain importable on systems
+    # without PyYAML (e.g. fresh Windows boxes where the framework was
+    # pulled in via npm and install.sh was never run). The yaml import is
+    # deferred to the two functions that actually parse YAML; those raise a
+    # user-readable ImportError at use time. dump_bindings.py catches and
+    # surfaces that as a clean warning instead of a Python traceback.
+    import builtins
+    import importlib
+    import sys
+
+    # Snapshot what we need to restore afterwards
+    saved_yaml = sys.modules.get("yaml")
+    saved_profile_loader = sys.modules.get("scripts.profile_loader")
+
+    # Force `import yaml` to fail at the module level so the try/except
+    # inside profile_loader's top-level block exercises the negative branch.
+    monkeypatch.setitem(sys.modules, "yaml", None)
+
+    def fake_import(name, *args, **kwargs):
+        if name == "yaml" or name.startswith("yaml."):
+            raise ImportError("No module named 'yaml' (simulated)")
+        return builtins.__import__(name, *args, **kwargs)
+
+    # Force a fresh import of profile_loader with the yaml blocker in place.
+    if saved_profile_loader is not None:
+        del sys.modules["scripts.profile_loader"]
+    real_import = builtins.__import__
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    try:
+        pl = importlib.import_module("scripts.profile_loader")
+    finally:
+        # Restore real __import__ and remove the bogus yaml shim
+        monkeypatch.setattr(builtins, "__import__", real_import)
+        if saved_yaml is None:
+            monkeypatch.delitem(sys.modules, "yaml", raising=False)
+        else:
+            monkeypatch.setitem(sys.modules, "yaml", saved_yaml)
+
+    # _yaml should be None (lazy import failed), but importing the module
+    # itself must NOT raise.
+    assert pl._yaml is None
+
+    # Calling _require_yaml() must raise an ImportError with the actionable
+    # message the dump_bindings wrapper depends on.
+    with pytest.raises(ImportError, match="PyYAML is required"):
+        pl._require_yaml()
+
+    # Reload a clean copy of profile_loader with yaml available so other
+    # tests in the suite see the real yaml import.
+    if saved_profile_loader is not None:
+        sys.modules["scripts.profile_loader"] = saved_profile_loader
+
+
+def test_dump_bindings_yaml_missing_returns_clean_message(monkeypatch, tmp_path, capsys):
+    # v0.4.4 regression. dump_bindings.main() must catch the ImportError
+    # raised by profile_loader's lazy _require_yaml() and surface a clean,
+    # actionable JSON payload instead of a Python traceback. The TS extension
+    # renders this string in the session_start warning banner.
+    import builtins
+    import importlib
+    import json
+    import sys
+
+    # Set up a fake profile so find_profile() returns a path
+    profile = tmp_path / ".pi" / "rolecast.yaml"
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    profile.write_text(
+        "framework_version: 0.2.0\n"
+        "name: test\n"
+        "description: test\n"
+        "workflow:\n  role_groups: []\n"
+        "gates: {}\n"
+        "bindings: {}\n"
+    )
+
+    saved_yaml = sys.modules.get("yaml")
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "yaml" or name.startswith("yaml."):
+            raise ImportError("No module named 'yaml' (simulated)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    # Re-import dump_bindings so the real import works for itself but its
+    # profile_loader dependency catches the simulated yaml failure.
+    if "scripts.dump_bindings" in sys.modules:
+        del sys.modules["scripts.dump_bindings"]
+    if "scripts.profile_loader" in sys.modules:
+        del sys.modules["scripts.profile_loader"]
+
+    try:
+        db = importlib.import_module("scripts.dump_bindings")
+
+        # Override find_profile to point at our temp profile; override
+        # Path.cwd() so the default --cwd argument is sane.
+        monkeypatch.setattr(db, "find_profile", lambda cwd: profile)
+        from pathlib import Path
+        monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: tmp_path))
+
+        rc = db.main()
+    finally:
+        if saved_yaml is None:
+            monkeypatch.delitem(sys.modules, "yaml", raising=False)
+        else:
+            monkeypatch.setitem(sys.modules, "yaml", saved_yaml)
+
+    out, err = capsys.readouterr()
+    # exit 2 signals a load failure to the extension
+    assert rc == 2
+    # stdout must be parseable JSON with the friendly error message
+    payload = json.loads(out.strip())
+    assert "error" in payload
+    msg = payload["error"]
+    assert "PyYAML" in msg
+    assert "pip install" in msg
+    # No Python traceback lines
+    assert "Traceback" not in out
+    assert "Traceback" not in err

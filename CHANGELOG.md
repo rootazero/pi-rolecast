@@ -4,6 +4,12 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-10-06
+
+### Fixed
+
+- **`dump_bindings.py` printed a Python traceback in the session_start warning when PyYAML was not installed.** On systems where the framework was pulled in as an npm dependency but the user never ran `install.sh` (which does `pip install -r requirements.txt`) — most commonly fresh Windows boxes where Node + pi are global but Python is either absent or only has the stdlib — `dump_bindings.py` would fail at module import time with `ModuleNotFoundError: No module named 'yaml'`. The TypeScript extension surfaced the stderr verbatim, producing a warning like `pi-rolecast: failed to load bindings (Traceback (most recent call last): ... ModuleNotFoundError: No module named 'yaml'). Dynamic binding disabled this session.` on every pi startup, scaring users who had no idea Python was involved. Made the PyYAML import lazy in `scripts/profile_loader.py`: the module now sets a sentinel (`_yaml = None`) when yaml cannot be imported, and the three YAML-parsing call sites (`_parse_frontmatter`, `load_profile`, `_read_registry_pair`) call `_require_yaml()` which raises a friendly `ImportError("PyYAML is required to parse pi-rolecast profile YAML files but is not installed")` only when actually invoked. `dump_bindings.py` adds a separate `except ImportError` branch that wraps the message with the install command (`Run `pip install -r requirements.txt` from the pi-rolecast install dir (or `pip install pyyaml`) and restart pi to enable dynamic role-to-model binding.`) and emits the standard `{error: ...}` JSON envelope with exit code 2. The session_start warning now reads `pi-rolecast: failed to load bindings (PyYAML is required to parse pi-rolecast profile YAML files but is not installed. Run `pip install -r requirements.txt` from the pi-rolecast install dir (or `pip install pyyaml`) and restart pi to enable dynamic role-to-model binding.). Dynamic binding disabled this session.` — actionable instead of scary. The framework continues to work in fallback mode (parent session model is used for every dispatch); only the role-specific bindings are disabled. Two regression tests added in `tests/unit/test_profile_loader.py`: `test_profile_loader_imports_without_pyyaml` (asserts `import profile_loader` succeeds when yaml is blocked, and `_require_yaml()` raises the expected ImportError) and `test_dump_bindings_yaml_missing_returns_clean_message` (asserts `dump_bindings.main()` returns exit 2 with a JSON payload containing `PyYAML` + `pip install` and no `Traceback` markers).
+
 ## [0.4.3] — 2026-10-06
 
 ### Fixed
@@ -177,7 +183,7 @@ Existing profiles keep working — `fallback_chain` defaults to `[]`, `requires`
 
 ### Added
 
-- **`scripts/uninstall.sh`** — idempotent cleanup of all framework artifacts. Removes the framework symlink, global agent symlinks targeting pi-rolecast, `settings.json` `subagents.agentOverrides` entries for framework roles, and project-local files authored by the framework (matched against `role-packs/<group>/<role>.md` enumeration). User-created files and non-framework entries are left intact.
+- **`scripts/uninstall.sh`** — idempotent cleanup of all framework artifacts. Removes the framework symlink, global agent symlinks targeting pi-rolecast, pi-agent-workflow, and any other framework-targeted symlinks, `settings.json` `subagents.agentOverrides` entries for framework roles, and project-local files authored by the framework (matched against `role-packs/<group>/<role>.md` enumeration). User-created files and non-framework entries are left intact.
 
 ### Changed
 
@@ -222,7 +228,7 @@ These shims were removed in 0.2.2 because pi-rolecast had only been out a few da
 - `scripts/sync_settings.py` rewritten to walk `role-packs/<group>/` instead of the legacy `agents/` directory. Preserves `_provider_for_model` + `VENDOR_TO_PROVIDER` map.
 - `src/extension.ts` updated: `PROFILE_FILENAMES = ['rolecast.yaml', 'agent-workflow.yaml']`; accepts both legacy and new profile filenames.
 - 5 templates (rust/typescript/python/go/blank) updated to v0.2.0 schema with `coding-*` bindings.
-- 7 references docs rewritten for v0.4.x (profile-schema, registry-resolution, gate-runner-usage, scaffolder-usage, sync-settings-usage, migration-from-rust-agent-workflow, dispatch-model-semantics).
+- 1 scaffolder template (blank) retained for the `--blank` flow.
 
 ### Tests
 

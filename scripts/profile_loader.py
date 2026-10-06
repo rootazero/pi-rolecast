@@ -29,7 +29,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-import yaml
+# PyYAML is the only third-party import in the framework. Import it lazily so
+# that `import profile_loader` itself never fails on systems without PyYAML
+# installed (e.g. fresh Windows boxes where the user installed Node + pi via
+# npm but never ran install.sh / pip install -r requirements.txt). The two
+# callers below raise a useful ImportError at use time, which dump_bindings.py
+# catches and surfaces as a user-readable hint instead of a Python traceback
+# in the session_start warning banner.
+try:
+    import yaml as _yaml
+except ImportError:  # noqa: F401 — re-raised lazily at the two callers below
+    _yaml = None  # type: ignore[assignment]
+
+
+def _require_yaml():
+    """Raise a friendly ImportError if PyYAML is not available."""
+    if _yaml is None:
+        raise ImportError(
+            "PyYAML is required to parse pi-rolecast profile YAML files but is not installed"
+        )
+    return _yaml
 
 # Legacy constant retained only for migration messages. v0.2.0+ roles are
 # discovered dynamically from role-packs/<group>/<role>.md.
@@ -185,7 +204,7 @@ def _parse_frontmatter(text: str) -> dict[str, Any]:
     if not m:
         return {}
     block = m.group(1)
-    loaded = yaml.safe_load(block) or {}
+    loaded = _require_yaml().safe_load(block) or {}
     if not isinstance(loaded, dict):
         return {}
     return loaded
@@ -270,7 +289,7 @@ def load_profile(path: str | Path, *, framework_root: str | Path | None = None) 
     p = Path(path)
     if not p.is_file():
         raise ProfileError(f"profile not found: {p}")
-    raw = yaml.safe_load(p.read_text())
+    raw = _require_yaml().safe_load(p.read_text())
     if not isinstance(raw, dict):
         raise ProfileError(f"profile {p} is not a YAML mapping")
     root = Path(framework_root) if framework_root else Path(__file__).resolve().parent.parent
@@ -592,11 +611,12 @@ def _read_registry_pair(path: Path, default: dict | None = None) -> tuple[list, 
     if path.is_dir():
         builtin_p = path / "built_in.yaml"
         alias_p = path / "aliases.yaml"
-        models = yaml.safe_load(builtin_p.read_text())["models"] if builtin_p.exists() else []
-        aliases = yaml.safe_load(alias_p.read_text())["aliases"] if alias_p.exists() else {}
+        y = _require_yaml()
+        models = y.safe_load(builtin_p.read_text())["models"] if builtin_p.exists() else []
+        aliases = y.safe_load(alias_p.read_text())["aliases"] if alias_p.exists() else {}
         return models, aliases
     if path.is_file():
-        raw = yaml.safe_load(path.read_text()) or (default or {"models": [], "aliases": {}})
+        raw = _require_yaml().safe_load(path.read_text()) or (default or {"models": [], "aliases": {}})
         return raw.get("models", []) or [], raw.get("aliases", {}) or {}
     return (default or {}).get("models", []) or [], (default or {}).get("aliases", {}) or {}
 

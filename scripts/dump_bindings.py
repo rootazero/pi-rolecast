@@ -55,6 +55,20 @@ def main() -> int:
 
     try:
         profile = load_profile(profile_path, framework_root=args.framework_root)
+    except ImportError as e:
+        # PyYAML is missing (or some other transitive dep). The user is most
+        # likely on a fresh Windows box where the framework was pulled in as
+        # an npm dep and install.sh was never run. Surface a one-liner with
+        # the install command rather than dumping the Python traceback into
+        # the session_start warning banner.
+        msg = (
+            f"{e} "
+            "Run `pip install -r requirements.txt` from the pi-rolecast "
+            "install dir (or `pip install pyyaml`) and restart pi to "
+            "enable dynamic role-to-model binding."
+        )
+        print(json.dumps({"error": msg}))
+        return 2
     except Exception as e:  # noqa: BLE001 — surface failure to caller as JSON
         print(json.dumps({"error": f"load_profile failed: {e}"}))
         return 2
