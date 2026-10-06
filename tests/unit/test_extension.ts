@@ -47,14 +47,14 @@ class MockPi {
 	}
 }
 
-test("registers scaffolder_init / scaffolder_validate / scaffolder_diff / gate_run tools", () => {
+test("registers scaffolder_init / scaffolder_validate / scaffolder_diff / gate_run / sync_settings tools", () => {
 	const pi = new MockPi();
 	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
 
 	const toolNames = pi.tools.map((t) => t.name).sort();
 	assert.deepEqual(
 		toolNames,
-		["gate_run", "scaffolder_diff", "scaffolder_init", "scaffolder_validate"],
+		["gate_run", "scaffolder_diff", "scaffolder_init", "scaffolder_validate", "sync_settings"],
 	);
 });
 
@@ -68,7 +68,7 @@ test("each tool has a non-empty description and an execute()", () => {
 	}
 });
 
-test("registers rolecast-init / rolecast-validate / rolecast-diff / rolecast-run / rolecast-status commands", () => {
+test("registers rolecast-init / rolecast-validate / rolecast-diff / rolecast-run / rolecast-status / rolecast-sync commands", () => {
 	const pi = new MockPi();
 	piAgentWorkflowExtension(pi as unknown as Parameters<typeof piAgentWorkflowExtension>[0]);
 
@@ -78,6 +78,7 @@ test("registers rolecast-init / rolecast-validate / rolecast-diff / rolecast-run
 		"rolecast-init",
 		"rolecast-run",
 		"rolecast-status",
+		"rolecast-sync",
 		"rolecast-validate",
 	]);
 });

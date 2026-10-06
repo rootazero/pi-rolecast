@@ -7,10 +7,11 @@
  *
  * Provides:
  *   Tools (model-callable):
- *     - scaffolder_init     wraps `python3 scripts/scaffolder.py init`
- *     - scaffolder_validate wraps `python3 scripts/scaffolder.py validate`
- *     - scaffolder_diff     wraps `python3 scripts/scaffolder.py diff`
- *     - gate_run            wraps `python3 scripts/gate_runner.py`
+ *     - scaffolder_init     bootstrap a project profile (src/scaffolder.ts)
+ *     - scaffolder_validate validate a profile (src/scaffolder.ts)
+ *     - scaffolder_diff     check for framework schema drift (src/scaffolder.ts)
+ *     - gate_run            run a gate phase (src/gate_runner.ts)
+ *     - sync_settings       sync profile bindings to project-local agent files (src/sync_settings.ts)
  *
  *   Slash commands:
  *     - /rolecast-init      scaffold a project profile
@@ -18,6 +19,7 @@
  *     - /rolecast-diff      check for framework schema drift
  *     - /rolecast-run       run a gate phase
  *     - /rolecast-status    show the dynamic binding snapshot
+ *     - /rolecast-sync      sync profile bindings to .pi/agents/*.md (authoritative) + optionally settings.json
  *
  *   Event hooks:
  *     - session_start: detect missing profile, load bindings cache, surface
@@ -63,6 +65,11 @@ import {
 	type ResolverModel,
 	type ResolverRegistry,
 } from "./model_resolver.js";
+import {
+	syncSettings as syncSettingsLib,
+	DEFAULT_SETTINGS_PATH as SYNC_DEFAULT_SETTINGS_PATH,
+	type SyncResult,
+} from "./sync_settings.js";
 
 const execFileP = promisify(execFile);
 
@@ -359,6 +366,87 @@ const gateRunTool = defineTool({
 	},
 });
 
+// ---- Tool: sync_settings ----
+
+const syncSettingsTool = defineTool({
+	name: "sync_settings",
+	label: "Sync Settings",
+	description: [
+		"Write project-local agent files (.pi/agents/<full-role>.md) and optionally",
+		"~/.pi/agent/settings.json subagents.agentOverrides from the current profile.",
+		"The project-local .md files are authoritative for pi-subagents dispatch;",
+		"settings.json is opt-in (--settings-write / settings_write=true) and preserved",
+		"for parity with the v0.4.x skill design.",
+	].join(" "),
+	promptSnippet:
+		"After editing .pi/rolecast.yaml, run sync_settings so project-local .pi/agents/*.md reflect the new bindings.",
+	promptGuidelines: [
+		"Pass settings_write=true to also update ~/.pi/agent/settings.json (opt-in; not authoritative).",
+		"Pass no_agents=true to skip the .md file writes (dry-run for settings.json only).",
+		"Pass dry_run=true to preview without writing.",
+	],
+	parameters: Type.Object({
+		profile_path: Type.Optional(
+			Type.String({
+				description:
+					"Path to the profile YAML. Default: .pi/rolecast.yaml relative to the current working directory.",
+			}),
+		),
+		settings_write: Type.Optional(
+			Type.Boolean({
+				description: "Also write ~/.pi/agent/settings.json (opt-in). Default: false.",
+			}),
+		),
+		no_agents: Type.Optional(
+			Type.Boolean({
+				description: "Skip writing .pi/agents/*.md files. Default: false.",
+			}),
+		),
+		dry_run: Type.Optional(
+			Type.Boolean({ description: "Print what would be written without writing." }),
+		),
+	}),
+	async execute(_id, params, _signal, _onUpdate, _ctx) {
+		let r: SyncResult;
+		try {
+			r = syncSettingsLib({
+				profilePath: params.profile_path ?? projectProfile(process.cwd()),
+				frameworkRoot: FRAMEWORK_ROOT,
+				settingsPath: SYNC_DEFAULT_SETTINGS_PATH,
+				agentsDir: join(process.cwd(), ".pi", "agents"),
+				settingsWrite: params.settings_write ?? false,
+				noAgents: params.no_agents ?? false,
+				dryRun: params.dry_run ?? false,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			return {
+				content: [{ type: "text", text: `[stderr]\n${msg}` }],
+				details: { exitCode: 2, stdout: "", stderr: msg },
+			};
+		}
+		const lines: string[] = [];
+		lines.push(`agents dir: ${r.agentsDir}`);
+		lines.push(`agents written: ${r.agentsWritten}`);
+		if (r.settingsWritten !== undefined) {
+			lines.push(`settings written: ${r.settingsWritten}`);
+		}
+		const sortedRoles = Object.keys(r.perRole).sort();
+		if (sortedRoles.length > 0) {
+			lines.push("");
+			lines.push("per-role:");
+			for (const role of sortedRoles) {
+				const p = r.perRole[role]!;
+				lines.push(`  ${role.padEnd(22)} ${p.model}`);
+			}
+		}
+		return {
+			content: [{ type: "text", text: lines.join("\n") }],
+			details: { agentsWritten: r.agentsWritten, settingsWritten: r.settingsWritten ?? null },
+		};
+	},
+});
+
 // ---- Profile detection ----
 
 interface SessionCtx {
@@ -572,11 +660,12 @@ function snapshotForRolecast(
 // ---- Extension factory ----
 
 export default function piRolecastExtension(pi: ExtensionAPI): void {
-	// Register all four tools so the model can call them.
+	// Register all five tools so the model can call them.
 	pi.registerTool(scaffolderInitTool);
 	pi.registerTool(scaffolderValidateTool);
 	pi.registerTool(scaffolderDiffTool);
 	pi.registerTool(gateRunTool);
+	pi.registerTool(syncSettingsTool);
 
 	// Slash commands mirror the tools for direct user invocation. Names use the
 // `rolecast-*` prefix (matches the package name).
@@ -642,6 +731,38 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		const result = gateRunResultToRunResult(r);
 		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
 	};
+	const syncHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
+		const parts = args.trim().split(/\s+/).filter(Boolean);
+		let settingsWrite = false;
+		let noAgents = false;
+		let dryRun = false;
+		for (const p of parts) {
+			if (p === "--settings-write") settingsWrite = true;
+			else if (p === "--no-agents") noAgents = true;
+			else if (p === "--dry-run") dryRun = true;
+		}
+		let r: SyncResult;
+		try {
+			r = syncSettingsLib({
+				profilePath: findProjectProfile(process.cwd()) ?? projectProfile(process.cwd()),
+				frameworkRoot: FRAMEWORK_ROOT,
+				settingsPath: SYNC_DEFAULT_SETTINGS_PATH,
+				agentsDir: join(process.cwd(), ".pi", "agents"),
+				settingsWrite,
+				noAgents,
+				dryRun,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			ctx.ui.notify(msg, "error");
+			return;
+		}
+		const lines: string[] = [
+			`agents written: ${r.agentsWritten} → ${r.agentsDir}`,
+		];
+		if (r.settingsWritten !== undefined) lines.push(`settings written: ${r.settingsWritten}`);
+		ctx.ui.notify(lines.join("\n"), "info");
+	};
 
 	pi.registerCommand("rolecast-init", {
 		description: "Bootstrap .pi/rolecast.yaml in the current project.",
@@ -661,6 +782,11 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("rolecast-run", {
 		description: "Run the project's gate-runner. Usage: /rolecast-run [phase]",
 		handler: runHandler,
+	});
+
+	pi.registerCommand("rolecast-sync", {
+		description: "Sync profile bindings to project-local agent files. Usage: /rolecast-sync [--settings-write] [--no-agents] [--dry-run]",
+		handler: syncHandler,
 	});
 
 	pi.registerCommand("rolecast-status", {

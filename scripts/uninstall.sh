@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# pi-rolecast uninstaller. Removes all framework artifacts created by
-# install.sh and sync_settings.py. Safe to run multiple times (idempotent).
+# pi-rolecast uninstaller. v0.5.0+: pure Node — no python3 dependency.
+# Removes all framework artifacts created by install.sh. Safe to run multiple
+# times (idempotent).
 #
 # Removes:
 #   - ~/.pi/agent/pi-rolecast framework symlink
@@ -42,6 +43,8 @@ done
 [[ -z "$SETTINGS_JSON" ]] && SETTINGS_JSON="$PREFIX/settings.json"
 [[ -z "$GLOBAL_AGENTS_DIR" ]] && GLOBAL_AGENTS_DIR="$PREFIX/agents"
 [[ -z "$PROJECT_AGENTS_DIR" ]] && PROJECT_AGENTS_DIR="$(pwd)/.pi/agents"
+
+NODE_BIN="${NODE:-$(command -v node || echo node)}"
 
 # Find framework root to enumerate framework role names. Without this we
 # cannot tell framework-written project-local files from user customizations.
@@ -109,28 +112,31 @@ elif [[ -z "$KEEP_PROJECT_AGENTS" && -d "$PROJECT_AGENTS_DIR" ]]; then
 fi
 
 # 4. Clean settings.json subagents.agentOverrides for framework roles
-if [[ -f "$SETTINGS_JSON" && ${#framework_roles[@]} -gt 0 ]]; then
-  python3 - "$SETTINGS_JSON" "${framework_roles[@]}" <<'PYEOF'
-import json, sys
-path = sys.argv[1]
-roles = set(sys.argv[2:])
-try:
-    with open(path) as f:
-        s = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    sys.exit(0)
-sub = s.setdefault("subagents", {})
-ov = sub.get("agentOverrides", {}) or {}
-cleared = [k for k in list(ov) if k in roles]
-for k in cleared:
-    del ov[k]
-sub["agentOverrides"] = ov
-s["subagents"] = sub
-with open(path, "w") as f:
-    json.dump(s, f, indent=2, sort_keys=True)
-    f.write("\n")
-print(f"removed {len(cleared)} framework overrides from {path}")
-PYEOF
+# v0.5.0+: pure Node via a small inline .mjs script (no python3 dependency).
+if [[ -f "$SETTINGS_JSON" && ${#framework_roles[@]} -gt 0 && -n "$NODE_BIN" ]]; then
+  roles_json=$(printf '%s\n' "${framework_roles[@]}" | $NODE_BIN -e '
+    const chunks = [];
+    process.stdin.on("data", d => chunks.push(d));
+    process.stdin.on("end", () => process.stdout.write(JSON.stringify(chunks.join("").trim().split("\n").filter(Boolean))));
+  ')
+  $NODE_BIN - "$SETTINGS_JSON" "$roles_json" <<'NODEEOF'
+const fs = require("node:fs");
+const path = process.argv[2];
+const roles = new Set(JSON.parse(process.argv[3]));
+let s;
+try { s = JSON.parse(fs.readFileSync(path, "utf8")); }
+catch { process.exit(0); }
+const sub = s.subagents || (s.subagents = {});
+const ov = sub.agentOverrides || {};
+let cleared = 0;
+for (const k of Object.keys(ov)) {
+  if (roles.has(k)) { delete ov[k]; cleared++; }
+}
+sub.agentOverrides = ov;
+s.subagents = sub;
+fs.writeFileSync(path, JSON.stringify(s, null, 2) + "\n");
+process.stdout.write(`removed ${cleared} framework overrides from ${path}\n`);
+NODEEOF
 fi
 
 # 5. Remove empty agent directories (after all cleanup)

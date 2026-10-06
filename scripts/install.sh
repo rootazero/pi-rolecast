@@ -79,31 +79,18 @@ done < <(find "$FRAMEWORK_ROOT/role-packs" -type f -name '*.md' 2>/dev/null | so
 echo "linked $linked role agents from role-packs/"
 
 # Warn if pi-subagents is missing — required for actual role dispatch.
+# v0.5.0+: pure Node check via jq (no python3 dependency).
 SETTINGS_JSON="$PREFIX/settings.json"
-if [[ -f "$SETTINGS_JSON" ]] && python3 -c "
-import json, sys
-try:
-    d = json.load(open('$SETTINGS_JSON'))
-    pkgs = d.get('packages', [])
-    if not any('pi-subagents' in str(p) or 'subagents' in str(p) for p in pkgs):
-        sys.exit(0)
-    sys.exit(1)
-except Exception:
-    sys.exit(0)
-" 2>/dev/null; then
-  echo ""
-  echo "WARNING: pi-subagents not found in $PREFIX/settings.json packages[]"
-  echo "  Role symlinks are installed but dispatch won't work without pi-subagents."
-  echo " Install with:  pi install npm:@tintinweb/pi-subagents"
+if [[ -f "$SETTINGS_JSON" ]] && command -v jq >/dev/null 2>&1; then
+  if jq -e '.packages // [] | map(select(test("pi-subagents|subagents"; "i"))) | length == 0' "$SETTINGS_JSON" >/dev/null 2>&1; then
+    echo ""
+    echo "WARNING: pi-subagents not found in $SETTINGS_JSON packages[]"
+    echo "  Role symlinks are installed but dispatch won't work without pi-subagents."
+    echo " Install with:  pi install npm:@tintinweb/pi-subagents"
+  fi
 fi
 
-if [[ -n "$NO_PIP" ]]; then
-  echo "skipping pip install (--no-pip)"
-elif python3 -c "import yaml" 2>/dev/null; then
-  echo "PyYAML already importable; skipping pip install"
-else
-  python3 -m pip install --user -r "$FRAMEWORK_ROOT/requirements.txt"
-fi
+# v0.5.0: no more pip install step. JS+js-yaml are bundled in dist/.
 
 echo "install complete"
 
@@ -154,13 +141,17 @@ elif [[ -f "./.pi/agent-workflow.yaml" ]]; then
 fi
 if [[ -n "$profile_path" ]]; then
   echo "found $profile_path in cwd; syncing to .pi/agents/ (project-local, authoritative)"
-  python3 "$FRAMEWORK_ROOT/scripts/sync_settings.py" \
-    --profile "$profile_path" \
-    --framework-root "$FRAMEWORK_ROOT" || \
-    echo "warning: sync_settings.py failed (run it manually)"
+  if [[ -f "$FRAMEWORK_ROOT/dist/sync_settings.js" ]]; then
+    node "$FRAMEWORK_ROOT/dist/sync_settings.js" \
+      --profile "$profile_path" \
+      --framework-root "$FRAMEWORK_ROOT" || \
+      echo "warning: sync_settings failed (run it manually)"
+  else
+    echo "warning: dist/sync_settings.js not found — run 'npm run build' in $FRAMEWORK_ROOT first"
+  fi
 else
   echo "next: scaffold a profile in your project with:"
-  echo "  python3 \$SKILL_ROOT/scripts/scaffolder.py init --template rust"
+  echo "  pi rolecast-init --template rust    # or call the scaffolder_init tool from inside pi"
 fi
 
 # Closing hint — surfaces the two most common extension points (project-local
