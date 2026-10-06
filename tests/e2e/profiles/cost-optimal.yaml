@@ -1,0 +1,69 @@
+# Cost-optimal profile — copy to fixtures/todo-tui/.pi/rolecast.yaml.
+#
+# Strategy: judgment roles get the premium model (gpt-5.5) but only for the
+# high-stakes decisions (architect, reviewer, auditor); execution roles use
+# the cheap verifiable model (deepseek-flash); mechanical roles use the
+# cheapest (MiniMax-M3 low thinking). Expected cost distribution:
+#
+#   Judgment (3 roles):  ~25% of tokens × $30/M output = $7.50
+#   Verifiable (3 roles): ~50% of tokens × $1.2/M output = $0.60
+#   Mechanical (4 roles): ~15% of tokens × $1.2/M output = $0.18
+#   Orchestrator (1 role): ~10% of tokens × $1.2/M output = $0.12
+#   Estimated total: ~$8.40 per e2e run, dominated by judgment-tier.
+
+framework_version: 0.2.0
+name: todo-tui-cost-optimal
+description: |
+  Cost-optimal profile for the e2e test. Judgment work goes to the premium
+  model (gpt-5.5) but only the 3 roles that actually need it; execution work
+  goes to the cheap verifiable model (deepseek-flash); mechanical work goes
+  to MiniMax-M3. Total cost is bounded by keeping judgment volume small.
+
+workflow:
+  role_groups: [coding]
+
+gates:
+  compile:
+    commands: [cargo check --message-format short --all-targets]
+    timeout: 300
+  lint:
+    commands: [cargo clippy -- -D warnings]
+    timeout: 300
+  test:
+    commands: [cargo test]
+    timeout: 900
+
+bindings:
+  # ── Judgment tier (premium model — high cost but small volume) ──────────
+  coding-architect:    {alias: gpt-judgment-high,   channels: [official]}
+  coding-reviewer:     {alias: gpt-judgment-high,   channels: [official]}
+  coding-auditor:      {alias: gpt-judgment-medium, channels: [official]}
+
+  # ── Verifiable tier (cheap + capable — bulk of the work) ─────────────────
+  coding-planner:      {alias: deepseek-verifiable, channels: [official]}
+  coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+  coding-tester:       {alias: deepseek-verifiable, channels: [official]}
+
+  # ── Orchestrator ─────────────────────────────────────────────────────────
+  # Cheap high-reasoning — orchestrator dispatches but doesn't execute.
+  coding-orchestrator: {alias: opus-thinking-medium, channels: [official]}
+
+  # ── Mechanical tier (cheapest, low thinking) ────────────────────────────
+  coding-mapper:       {alias: minimax-fast, channels: [official]}
+  coding-profiler:     {alias: minimax-fast, channels: [official]}
+  coding-canary:       {alias: minimax-fast, channels: [official]}
+  coding-docs:         {alias: minimax-medium, channels: [official]}
+
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '#\[allow\('
+      message: "never silence a diagnostic with #[allow(...)]"
+    - pattern: '\.unwrap\(\)'
+      message: "no bare .unwrap() — handle the Result"
+    - pattern: 'todo!\(\)'
+      message: "no TODO!() in shipped code — implementer must finish"
+
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

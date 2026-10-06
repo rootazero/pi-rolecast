@@ -1,0 +1,51 @@
+# Quality-first profile (reference) — everything routed to the premium model.
+# Same workflow + gates as cost-optimal; only `bindings:` differ. We don't
+# run this in the e2e by default; it serves as the comparison baseline for
+# the cost-effectiveness claim.
+
+framework_version: 0.2.0
+name: todo-tui-quality-first
+description: |
+  Quality-first profile: every role bound to the premium model (gpt-5.5).
+  Used as the baseline against which the cost-optimal profile is compared.
+
+workflow:
+  role_groups: [coding]
+
+gates:
+  compile:
+    commands: [cargo check --message-format short --all-targets]
+    timeout: 300
+  lint:
+    commands: [cargo clippy -- -D warnings]
+    timeout: 300
+  test:
+    commands: [cargo test]
+    timeout: 900
+
+bindings:
+  coding-architect:    {alias: gpt-judgment-high,   channels: [official]}
+  coding-planner:      {alias: gpt-judgment-high,   channels: [official]}
+  coding-implementer:  {alias: gpt-judgment-high,   channels: [official]}
+  coding-tester:       {alias: gpt-judgment-high,   channels: [official]}
+  coding-reviewer:     {alias: gpt-judgment-high,   channels: [official]}
+  coding-auditor:      {alias: gpt-judgment-high,   channels: [official]}
+  coding-orchestrator: {alias: gpt-judgment-medium, channels: [official]}
+  coding-mapper:       {alias: gpt-judgment-high,   channels: [official]}
+  coding-profiler:     {alias: gpt-judgment-high,   channels: [official]}
+  coding-canary:       {alias: gpt-judgment-medium, channels: [official]}
+  coding-docs:         {alias: gpt-judgment-medium, channels: [official]}
+
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '#\[allow\('
+      message: "never silence a diagnostic with #[allow(...)]"
+    - pattern: '\.unwrap\(\)'
+      message: "no bare .unwrap() — handle the Result"
+    - pattern: 'todo!\(\)'
+      message: "no TODO!() in shipped code"
+
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

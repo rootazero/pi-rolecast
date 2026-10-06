@@ -1,0 +1,4 @@
+/fixtures/todo-tui/target
+/fixtures/todo-tui/Cargo.lock
+/artifacts/*
+!/artifacts/.gitkeep

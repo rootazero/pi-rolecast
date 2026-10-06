@@ -1,0 +1,110 @@
+# Golden expectations for the cost-optimal profile.
+# verify_dispatch.sh reads this and asserts each .pi/agents/<role>.md
+# frontmatter matches the (model_id, channel_id, alias) tuple after sync.
+#
+# This is the *binding contract* the e2e verifies — actual dispatch may
+# fall back to the parent model if a binding's model is unreachable from
+# the runtime environment, but the alias → model resolution must match
+# what the profile declares.
+
+role_expectations:
+  coding-orchestrator:
+    alias: opus-thinking-medium
+    model_id: MiniMax-M3
+    provider: minimax-cn
+    channel: official
+    cost_tier: orchestrator
+    note: "cheap high-reasoning; orchestrates but doesn't execute; classified as orchestrator tier (M3-bound, low cost)"
+
+  coding-architect:
+    alias: gpt-judgment-high
+    model_id: gpt-5.5
+    provider: openai-codex
+    channel: official
+    cost_tier: judgment
+    note: "premium; design decisions need careful reasoning"
+
+  coding-planner:
+    alias: deepseek-verifiable
+    model_id: deepseek-flash
+    provider: deepseek
+    channel: official
+    cost_tier: verifiable
+    note: "cheap; plans are verifiable against spec"
+
+  coding-implementer:
+    alias: deepseek-verifiable
+    model_id: deepseek-flash
+    provider: deepseek
+    channel: official
+    cost_tier: verifiable
+    note: "cheap; gate-runner enforces correctness"
+
+  coding-tester:
+    alias: deepseek-verifiable
+    model_id: deepseek-flash
+    provider: deepseek
+    channel: official
+    cost_tier: verifiable
+    note: "cheap; tests must pass — gate-verified"
+
+  coding-reviewer:
+    alias: gpt-judgment-high
+    model_id: gpt-5.5
+    provider: openai-codex
+    channel: official
+    cost_tier: judgment
+    note: "premium; final judgment on the diff"
+
+  coding-mapper:
+    alias: minimax-fast
+    model_id: MiniMax-M3
+    provider: minimax-cn
+    channel: official
+    cost_tier: mechanical
+    note: "cheapest; mechanical exploration"
+
+  coding-profiler:
+    alias: minimax-fast
+    model_id: MiniMax-M3
+    provider: minimax-cn
+    channel: official
+    cost_tier: mechanical
+    note: "cheapest; mechanical measurement"
+
+  coding-auditor:
+    alias: gpt-judgment-medium
+    model_id: gpt-5.5
+    provider: openai-codex
+    channel: official
+    cost_tier: judgment
+    note: "premium; security reasoning"
+
+  coding-canary:
+    alias: minimax-fast
+    model_id: MiniMax-M3
+    provider: minimax-cn
+    channel: official
+    cost_tier: mechanical
+    note: "cheapest; mechanical check"
+
+  coding-docs:
+    alias: minimax-medium
+    model_id: MiniMax-M3
+    provider: minimax-cn
+    channel: official
+    cost_tier: mechanical
+    note: "general generation"
+
+# Cost-effectiveness bands the verifier checks after dispatch.
+cost_expectations:
+  total_output_tokens_ceiling: 200000   # hard ceiling; warn if exceeded
+  judgment_share_max: 0.45              # judgment tokens / total ≤ 45%
+  mechanical_share_max: 0.20            # mechanical tokens / total ≤ 20%
+  # Note: these are ratios against the run's own total, not against another
+  # profile. The actual cost-effectiveness claim is "judgment tier uses
+  # premium model but volume is bounded".
+  judgment_tier_roles: [coding-architect, coding-reviewer, coding-auditor]
+  verifiable_tier_roles: [coding-planner, coding-implementer, coding-tester]
+  mechanical_tier_roles: [coding-mapper, coding-profiler, coding-canary, coding-docs]
+  orchestrator_roles: [coding-orchestrator]

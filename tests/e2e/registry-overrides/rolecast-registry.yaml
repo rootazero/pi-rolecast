@@ -1,0 +1,108 @@
+# Project-local registry override (copy to fixtures/todo-tui/.pi/rolecast-registry.yaml).
+#
+# Maps shipped pi-rolecast aliases to the user's *real* pi model set.
+# Deep-merges with the built-in registry; later layers (this file) win for
+# aliases, and new model IDs are added alongside the built-ins.
+#
+# All models listed here are confirmed available in the user's pi setup
+# (see /home/zou/.pi/agent/models-store.json + auth.json):
+#   - deepseek-flash, deepseek-v4-pro      (deepseek)
+#   - MiniMax-M2.7, MiniMax-M2.7-highspeed, MiniMax-M3  (minimax-cn)
+#   - kimi-for-coding, kimi-for-coding-highspeed        (kimi-coding)
+#   - gpt-5.5, gpt-5.6-sol, gpt-5.6-luna, gpt-5.6-terra,
+#     gpt-6.1-sol, gpt-6-astra                          (openai-codex)
+#   - gpt-5.6-sol, gpt-5.6-luna                         (zetaapi, fallback)
+#
+# Cost tiers (output $/M tokens):
+#   low     ≤ 1.5: deepseek-flash, MiniMax-M*, gpt-5.6-luna, gpt-6-luna
+#   medium  2-10:  deepseek-v4-pro, kimi-for-coding, gpt-6.1-sol, gpt-5.6-terra
+#   high    15-50: kimi-for-coding-highspeed, gpt-5.6-sol, gpt-5.5, gpt-6-astra
+
+models:
+  # ── Cheap tier (output ≤ 1.5 $/M) ────────────────────────────────────────
+  - id: deepseek-flash
+    vendor: deepseek
+    capabilities: {reasoning: medium, thinking: true, context_window: 1000000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: low
+    status: stable
+
+  - id: MiniMax-M3
+    vendor: minimax-cn
+    capabilities: {reasoning: high, thinking: true, context_window: 1000000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: low
+    status: stable
+
+  # ── Mid tier (output 2-10 $/M) ───────────────────────────────────────────
+  - id: deepseek-v4-pro
+    vendor: deepseek
+    capabilities: {reasoning: high, thinking: true, context_window: 1000000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: medium
+    status: stable
+
+  - id: kimi-for-coding
+    vendor: kimi-coding
+    capabilities: {reasoning: high, thinking: true, context_window: 1048576}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: medium
+    status: stable
+
+  - id: gpt-6.1-sol
+    vendor: openai-codex
+    capabilities: {reasoning: high, thinking: true, context_window: 272000}
+    channels: [{id: official, trust: trusted}]
+    cost_tier: medium
+    status: stable
+
+  # ── High tier (output 15-50 $/M) ─────────────────────────────────────────
+  - id: gpt-5.5
+    vendor: openai-codex
+    capabilities: {reasoning: high, thinking: true, context_window: 272000}
+    channels: [{id: official, trust: trusted}, {id: relay-default, trust: unverified}]
+    cost_tier: high
+    status: stable
+
+aliases:
+  # ── Judgment tiers ───────────────────────────────────────────────────────
+  # The user has no Claude, so opus-* → MiniMax-M3 (cheap high-reasoning) or
+  # deepseek-v4-pro (mid high-reasoning) depending on whether the role needs
+  # premium output. For the e2e test we deliberately route opus-thinking-medium
+  # to MiniMax-M3 (cheap) so we can compare against a quality-first profile.
+  opus-thinking-medium:
+    preferred: MiniMax-M3
+    fallback_chain: [deepseek-v4-pro]
+    notes: "Judgment with high reasoning; cheap tier for cost-effective test"
+
+  opus-thinking-high:
+    preferred: deepseek-v4-pro
+    fallback_chain: [gpt-5.5]
+    notes: "High-effort judgment; mid tier"
+
+  gpt-judgment-medium:
+    preferred: gpt-5.5
+    fallback_chain: [gpt-6.1-sol]
+    notes: "Premium judgment; high tier"
+
+  gpt-judgment-high:
+    preferred: gpt-5.5
+    fallback_chain: [gpt-6.1-sol]
+    notes: "Premium judgment, high effort; high tier"
+
+  # ── Verifiable tier (default for execution work) ─────────────────────────
+  deepseek-verifiable:
+    preferred: deepseek-flash
+    fallback_chain: [MiniMax-M3]
+    notes: "Cheap verifiable-output model; used for implementer/tester/planner"
+
+  # ── Mechanical / generation ────────────────────────────────────────
+  minimax-medium:
+    preferred: MiniMax-M3
+    fallback_chain: []
+    notes: "General generation, medium thinking"
+
+  minimax-fast:
+    preferred: MiniMax-M3
+    fallback_chain: []
+    notes: "Cheap mechanical work, low thinking"
