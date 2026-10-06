@@ -4,6 +4,12 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-10-07
+
+### Fixed
+
+- **`scaffoldInit` "next steps" message referenced non-existent commands.** The v0.5.0 port of `scaffolder.py → src/scaffolder.ts` carried the Python scaffolder's "next steps" footer over verbatim, which read `pi-rolecast validate --profile <path>` and `pi-rolecast gate --profile <path> --phase all`. There is no `pi-rolecast validate` or `pi-rolecast gate` slash command — the real commands are `/rolecast-validate`, `/rolecast-run [phase]`, and `/rolecast-sync`, and slash commands do not take `--profile` arguments (they auto-discover the profile from cwd via `find_profile`). Users who copy-pasted the footer into their shell would hit `bash: pi-rolecast: command not found`. Updated the footer to use the actual slash command names and added `/rolecast-sync` so the hint reflects every post-init workflow step. Surfaces in the very first thing a new user sees after `/rolecast-init`: the "next steps" block at the bottom of the scaffolder's stdout.
+
 ## [0.5.0] — 2026-10-07
 
 ### ⚠ BREAKING CHANGE — Pure Node. No more Python dependency at install or runtime.

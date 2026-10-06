@@ -164,8 +164,9 @@ export function scaffoldInit(opts: ScaffoldInitOptions): ScaffoldInitResult {
         message: [
             `wrote ${profilePath}`,
             "next steps:",
-            `  pi-rolecast validate --profile ${profilePath}`,
-            `  pi-rolecast gate --profile ${profilePath} --phase all`,
+            `  /rolecast-validate         # validate ${profilePath}`,
+            `  /rolecast-run [phase]      # run the gate-runner (defaults to all phases)`,
+            `  /rolecast-sync             # sync profile bindings to .pi/agents/*.md`,
         ].join("\n"),
     };
 }
