@@ -23,10 +23,11 @@ If you're coming from `pi-agent-workflow` v0.1.x, see [references/migration-from
 ## Prerequisites
 
 - macOS or Linux
-- Python 3.10+ (3.12 is fine)
 - Node.js 20+ (only needed to build the Pi extension from source; pre-built `dist/` ships in the npm tarball)
 - For the install gate, a marker file for your language: `Cargo.toml`, `pyproject.toml`, `package.json + tsconfig.json`, or `go.mod`
 - A pi-compatible chat client (or `pi` CLI) to dispatch roles
+
+> **v0.5.0**: pi-rolecast is now **pure Node**. No Python dependency for installation or runtime. Python may still be used for some developer-facing test scripts, but is not required to install or run the framework.
 
 ## Install
 
@@ -46,7 +47,7 @@ This registers the framework as a Pi extension. After installing, run `/reload` 
 - **Model-callable tools**: `scaffolder_init`, `scaffolder_validate`, `scaffolder_diff`, `gate_run`
 - **A `session_start` hook** that notifies when no `.pi/rolecast.yaml` is present
 
-The extension is a thin TypeScript bridge (`src/extension.ts` → `dist/extension.js`) that shells out to the Python CLI in `scripts/`. Python is the source of truth; the extension adds Pi integration on top.
+The extension is a pure TypeScript bridge (`src/extension.ts` → `dist/extension.js`) that calls the framework's TS modules directly (`src/{profile_loader,scaffolder,gate_runner,sync_settings,dump_bindings}.ts`). **No Python, no subprocess** — just Node.
 
 ### Manual install (non-Pi consumers, or fall-back)
 
@@ -62,36 +63,40 @@ Default prefix is `$HOME/.pi/agent/`. The installer:
 2. Creates `~/.pi/agent/agents/<group>-<role>.md` → symlinks to `pi-rolecast/role-packs/<group>/<role>.md` for every role in every group. This is the location read by the **pi-subagents** extension.
 3. Removes the legacy `~/.pi/agent/pi-agent-workflow` symlink if found (v0.1.x).
 4. Removes any deprecated `~/.pi/agent/agent-<role>/SKILL.md` directories left over from earlier installs.
-5. If a profile is found in the current working directory (`.pi/rolecast.yaml` or legacy `.pi/agent-workflow.yaml`), runs `sync_settings.py` which both updates `~/.pi/agent/settings.json` and writes project-local `.pi/agents/<group>-<role>.md` files with `model:` + `thinking:` frontmatter populated from your bindings — these project-local copies override the global symlinks for that project (per pi-subagents precedence).
-6. Runs `python3 -m pip install --user -r requirements.txt` (PyYAML + pytest) unless PyYAML is already importable.
+5. If a profile is found in the current working directory (`.pi/rolecast.yaml` or legacy `.pi/agent-workflow.yaml`), runs `dist/sync_settings.js` (Node) which both updates `~/.pi/agent/settings.json` and writes project-local `.pi/agents/<group>-<role>.md` files with `model:` + `thinking:` frontmatter populated from your bindings — these project-local copies override the global symlinks for that project (per pi-subagents precedence).
+6. Warns if `pi-subagents` is not in `~/.pi/agent/settings.json` packages[] (uses `jq` for the check; the installer no longer installs Python deps).
 
 Flags:
 
 - `--prefix DIR` — install under `DIR` instead of `~/.pi/agent/`
 - `--framework-root DIR` — treat `DIR` as the framework root (default: parent of `scripts/`)
-- `--no-pip` — skip the `pip install` step
 - `--dry-run` — print what would be created without writing anything
 - `--keep-old-layout` — skip removal of legacy `agent-<role>/SKILL.md` directories
 
 ## Configure (bootstrap a project)
 
-```bash
-cd <your-project>
-python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py init
-```
-
 The scaffolder inspects your tree, picks the matching template, and writes `<project>/.pi/rolecast.yaml` with sensible defaults (workflow.role_groups, gates, bindings, escalation). For multi-language projects it lists candidates and asks you to pick one with `--template`.
 
 Templates ship in `templates/{rust,typescript,python,go,blank}.yaml`. Each declares 11 role bindings (the `coding` group) and 2–3 gate phases (compile / lint / test).
 
-Validate and inspect:
+### Via the Pi extension (recommended)
+
+```text
+/rolecast-init                 # scaffold .pi/rolecast.yaml
+/rolecast-validate             # validate the project profile
+/rolecast-diff                 # check for framework schema drift
+```
+
+…or invoke the model-callable tools directly (`scaffolder_init`, `scaffolder_validate`, `scaffolder_diff`).
+
+### Via the manual install (shell only)
+
+The scaffolder / validator / differ are pure TS modules — you can invoke the compiled `dist/` versions directly:
 
 ```bash
-python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py validate \
-    --profile .pi/rolecast.yaml
-
-python3 ~/.pi/agent/pi-rolecast/scripts/scaffolder.py diff \
-    --profile .pi/rolecast.yaml
+node ~/.pi/agent/pi-rolecast/dist/scaffolder.js init --template rust
+node ~/.pi/agent/pi-rolecast/dist/scaffolder.js validate --profile .pi/rolecast.yaml
+node ~/.pi/agent/pi-rolecast/dist/scaffolder.js diff --profile .pi/rolecast.yaml
 ```
 
 ## Use
@@ -107,21 +112,23 @@ After `pi install`, the extension exposes:
 /rolecast-validate             # validate the project profile
 /rolecast-diff                 # check for framework schema drift
 /rolecast-run [phase]          # run gate-runner; phase defaults to all
+/rolecast-sync                 # sync profile bindings to .pi/agents/*.md
 ```
 
 **Model-callable tools** (the LLM can call these directly):
 
-- `scaffolder_init` — wraps `python3 scripts/scaffolder.py init`
-- `scaffolder_validate` — wraps `python3 scripts/scaffolder.py validate`
-- `scaffolder_diff` — wraps `python3 scripts/scaffolder.py diff`
-- `gate_run` — wraps `python3 scripts/gate_runner.py`
+- `scaffolder_init` — invokes `src/scaffolder.ts` (scaffoldInit)
+- `scaffolder_validate` — invokes `src/scaffolder.ts` (validateProfile)
+- `scaffolder_diff` — invokes `src/scaffolder.ts` (diffProfile)
+- `gate_run` — invokes `src/gate_runner.ts` (runGate)
+- `sync_settings` — invokes `src/sync_settings.ts` (syncSettings)
 
 **`session_start` hook** — if no `.pi/rolecast.yaml` is found in the project root, you'll see a one-time hint pointing to `/rolecast-init`.
 
 ### Via the manual install (shell only)
 
 ```bash
-python3 ~/.pi/agent/pi-rolecast/scripts/gate_runner.py \
+node ~/.pi/agent/pi-rolecast/dist/gate_runner.js \
     --profile .pi/rolecast.yaml
 ```
 
@@ -152,16 +159,16 @@ See [references/registry-resolution.md](references/registry-resolution.md) for t
 
 ### Bridging profile bindings to pi dispatch
 
-Profile bindings (alias -> model + channel) live in `.pi/rolecast.yaml`. Pi subagent dispatch reads `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<group>-<role>.model`. The bridge is `scripts/sync_settings.py`:
+Profile bindings (alias -> model + channel) live in `.pi/rolecast.yaml`. Pi subagent dispatch reads `~/.pi/agent/settings.json` -> `subagents.agentOverrides.<group>-<role>.model`. The bridge is the built-in `dist/sync_settings.js` module (pure Node, no Python):
 
 ```
-python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --dry-run
-python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --clear
-python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --status        # show current state vs profile bindings (no changes)
-python3 ~/.pi/agent/pi-rolecast/scripts/sync_settings.py --list-groups  # show available role groups from role-packs/
+node ~/.pi/agent/pi-rolecast/dist/sync_settings.js --dry-run
+node ~/.pi/agent/pi-rolecast/dist/sync_settings.js --clear
+node ~/.pi/agent/pi-rolecast/dist/sync_settings.js --status        # show current state vs profile bindings (no changes)
+node ~/.pi/agent/pi-rolecast/dist/sync_settings.js --list-groups  # show available role groups from role-packs/
 ```
 
-`bash scripts/install.sh` runs sync automatically when a profile is found in cwd.
+…or via the Pi extension: the `/rolecast-sync` slash command or the model-callable `sync_settings` tool. `bash scripts/install.sh` runs sync automatically when a profile is found in cwd.
 
 ## Directory layout
 
@@ -213,10 +220,10 @@ pi-rolecast/
 
 The framework does not run a custom dispatch extension itself. Instead, the **pi-subagents** extension (third-party, by `@tintinweb`, install separately: `pi install npm:@tintinweb/pi-subagents`) reads each role's `model:` + `thinking:` frontmatter and dispatches accordingly.
 
-When `install.sh` or `sync_settings.py` runs against a project with a profile:
+When `install.sh` or `dist/sync_settings.js` runs against a project with a profile:
 
 - Global symlinks at `~/.pi/agent/agents/<group>-<role>.md` point at the framework defaults (`deepseek-flash` everywhere).
-- `sync_settings.py` then writes **project-local** copies at `<project>/.pi/agents/<group>-<role>.md` with `model:` + `thinking:` set from your profile bindings.
+- `dist/sync_settings.js` then writes **project-local** copies at `<project>/.pi/agents/<group>-<role>.md` with `model:` + `thinking:` set from your profile bindings.
 
 **Project-local copies win** (pi-subagents' load order: project before global), so `@coding-architect` in a project will use whatever you bound `coding-architect` to.
 
@@ -225,7 +232,7 @@ When `install.sh` or `sync_settings.py` runs against a project with a profile:
 1. Create `role-packs/<group>/<role>.md` for each role in the new group. Frontmatter must include `name: <group>-<role>` (hyphen-namespaced).
 2. Add the group to `workflow.role_groups` in your profile.
 3. Add bindings for the new full role names in `bindings:`.
-4. Run `python3 scripts/sync_settings.py`.
+4. Run `node dist/sync_settings.js` (or `/rolecast-sync`).
 
 See [references/migration-from-rust-agent-workflow.md](references/migration-from-rust-agent-workflow.md) for the planned future groups (video, research, design, music).
 

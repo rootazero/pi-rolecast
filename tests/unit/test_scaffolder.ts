@@ -12,7 +12,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { load as yamlLoad } from "js-yaml";
 
 import {
@@ -310,67 +309,3 @@ test("validateProfile: malformed profile returns INVALID", () => {
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// Cross-implementation equivalence: TS output matches Python output
-// for the same fixture + args.
-// ─────────────────────────────────────────────────────────────────────
-
-test("scaffoldInit: TS output equals Python scaffolder.py output (rust)", () => {
-    const tmp = makeTempDir();
-    try {
-        touchFile(tmp, "Cargo.toml");
-        const tsR = scaffoldInit({ projectRoot: tmp, frameworkRoot: FRAMEWORK_ROOT });
-        assertLib.equal(tsR.ok, true);
-        const tsContent = fs.readFileSync(tsR.profilePath!, "utf8");
-
-        const proc = spawnSync(
-            "python3",
-            [
-                "scripts/scaffolder.py",
-                "init",
-                "--framework-root", FRAMEWORK_ROOT,
-                "--project-root", tmp,
-                "--force",
-            ],
-            { encoding: "utf8", cwd: PROJECT_ROOT },
-        );
-        assertLib.equal(proc.status, 0, `python3 scaffolder.py failed:\n${proc.stderr}`);
-        const pyContent = fs.readFileSync(tsR.profilePath!, "utf8");
-
-        // js-yaml safe_dump uses different quoting than PyYAML safe_dump but
-        // the structural content should round-trip identically. Parse both
-        // and compare the result.
-        const tsParsed = yamlLoad(tsContent);
-        const pyParsed = yamlLoad(pyContent);
-        assertLib.deepEqual(tsParsed, pyParsed);
-    } finally {
-        fs.rmSync(tmp, { recursive: true, force: true });
-    }
-});
-
-test("diffProfile: TS output equals Python scaffolder.py diff output", () => {
-    const profilePath = path.join(PROJECT_ROOT, "tests", "fixtures", "sample-rust", ".pi", "rolecast.yaml");
-    const tsR = diffProfile({ profilePath, frameworkRoot: FRAMEWORK_ROOT });
-
-    const proc = spawnSync(
-        "python3",
-        ["scripts/scaffolder.py", "diff", "--framework-root", FRAMEWORK_ROOT, "--profile", profilePath],
-        { encoding: "utf8", cwd: PROJECT_ROOT },
-    );
-    assertLib.equal(proc.status, 0, `python3 scaffolder.py diff failed:\n${proc.stderr}`);
-    // Trim trailing newlines on both sides for tolerance to ws differences.
-    assertLib.equal(tsR.output.trim(), proc.stdout.trim());
-});
-
-test("validateProfile: TS output equals Python scaffolder.py validate output", () => {
-    const profilePath = path.join(PROJECT_ROOT, "tests", "fixtures", "sample-rust", ".pi", "rolecast.yaml");
-    const tsR = validateProfile({ profilePath, frameworkRoot: FRAMEWORK_ROOT });
-
-    const proc = spawnSync(
-        "python3",
-        ["scripts/scaffolder.py", "validate", "--framework-root", FRAMEWORK_ROOT, "--profile", profilePath],
-        { encoding: "utf8", cwd: PROJECT_ROOT },
-    );
-    assertLib.equal(proc.status, 0, `python3 scaffolder.py validate failed:\n${proc.stderr}`);
-    assertLib.equal(tsR.output.trim(), proc.stdout.trim());
-});

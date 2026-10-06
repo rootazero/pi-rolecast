@@ -8,7 +8,6 @@
  */
 import { test as testApi } from "node:test";
 import assertLib from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -414,67 +413,3 @@ test("runGate: summary shape is JSON-serialisable with required keys", async () 
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// Cross-implementation equivalence (TS port matches Python gate_runner.py)
-// ─────────────────────────────────────────────────────────────────────
-
-function pythonAvailable(): { available: boolean; path: string } {
-    const python = process.env.PYTHON ?? "python3";
-    return { available: true, path: python };
-}
-
-test("runGate: TS exit code matches Python gate_runner.py on a passing profile", async () => {
-    const tmp = makeTempDir();
-    const logDir = makeTempDir();
-    try {
-        const profilePath = writeProfile(tmp, profileYaml({
-            phases: { phase_a: { commands: ["true"], timeout: 10 } },
-        }));
-        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
-        assertLib.equal(r.exitCode, 0, "TS gate runner should exit 0 on passing profile");
-
-        const { available, path: python } = pythonAvailable();
-        if (!available) return;
-        const pyResult = spawnSync(
-            python,
-            ["scripts/gate_runner.py", "--profile", profilePath, "--log-dir", logDir],
-            { cwd: PROJECT_ROOT, encoding: "utf8" },
-        );
-        if (pyResult.error?.code === "ENOENT") return;
-        assertLib.equal(
-            pyResult.status,
-            r.exitCode,
-            `TS exit=${r.exitCode}, Python exit=${pyResult.status}; stderr=${pyResult.stderr?.slice(-200)}`,
-        );
-    } finally {
-        cleanup(tmp, logDir);
-    }
-});
-
-test("runGate: TS exit code matches Python gate_runner.py on a failing profile", async () => {
-    const tmp = makeTempDir();
-    const logDir = makeTempDir();
-    try {
-        const profilePath = writeProfile(tmp, profileYaml({
-            phases: {
-                phase_a: { commands: ["false"], timeout: 10 },
-                phase_b: { commands: ["true"], timeout: 10 },
-            },
-            onFailure: "stop",
-        }));
-        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
-        assertLib.equal(r.exitCode, 1, "TS gate runner should exit 1 on failing profile");
-
-        const { available, path: python } = pythonAvailable();
-        if (!available) return;
-        const pyResult = spawnSync(
-            python,
-            ["scripts/gate_runner.py", "--profile", profilePath, "--log-dir", logDir],
-            { cwd: PROJECT_ROOT, encoding: "utf8" },
-        );
-        if (pyResult.error?.code === "ENOENT") return;
-        assertLib.equal(pyResult.status, r.exitCode);
-    } finally {
-        cleanup(tmp, logDir);
-    }
-});

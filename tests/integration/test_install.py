@@ -15,7 +15,7 @@ def test_install_creates_framework_dir_and_symlinks(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -71,13 +71,17 @@ def test_install_syncs_profile_bindings_when_present(tmp_path):
 
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         cwd=str(project_dir), env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
     assert "found ./.pi/rolecast.yaml" in result.stdout
-    assert "synced" in result.stdout
+    assert "syncing" in result.stdout
     assert ".pi/agents" in result.stdout
+    # Project-local agent files were actually written.
+    project_agents = project_dir / ".pi" / "agents"
+    assert project_agents.is_dir(), f"missing {project_agents}"
+    assert any(project_agents.glob("*.md")), "no project-local .md files written"
 
 
 def test_install_accepts_legacy_profile_filename(tmp_path):
@@ -100,7 +104,7 @@ def test_install_accepts_legacy_profile_filename(tmp_path):
 
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         cwd=str(project_dir), env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -118,7 +122,7 @@ def test_install_no_sync_when_no_profile(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         cwd=str(project_dir), capture_output=True, text=True,
     )
     assert result.returncode == 0
@@ -136,7 +140,7 @@ def test_install_cleans_up_old_agent_role_directories(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -155,7 +159,7 @@ def test_install_keep_old_layout_preserves_existing(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip", "--keep-old-layout"],
+         "--framework-root", str(fw_root), "--keep-old-layout"],
         capture_output=True, text=True,
     )
     assert result.returncode == 0
@@ -171,7 +175,7 @@ def test_install_removes_legacy_pi_agent_workflow_symlink(tmp_path):
     (prefix / "pi-agent-workflow").symlink_to(fw_root)
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -191,7 +195,7 @@ def test_install_warns_when_pi_subagents_missing(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -208,7 +212,7 @@ def test_install_no_warning_when_pi_subagents_present(tmp_path):
     fw_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["bash", str(INSTALL_SH), "--prefix", str(prefix),
-         "--framework-root", str(fw_root), "--no-pip"],
+         "--framework-root", str(fw_root)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr

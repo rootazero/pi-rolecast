@@ -12,7 +12,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 
 import { dumpBindings } from "../../src/dump_bindings.js";
 
@@ -158,41 +157,5 @@ test("dumpBindings: framework root with no rolecast.yaml anywhere returns empty"
         assertLib.deepEqual(result.bindings, {});
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
-    }
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// Cross-implementation equivalence: TS output matches Python output
-// for the same profile + cwd.
-// ─────────────────────────────────────────────────────────────────────
-
-test("dumpBindings: TS output equals Python dump_bindings.py output", () => {
-    const cwd = path.join(PROJECT_ROOT, "tests", "fixtures", "sample-rust");
-    const tsResult = dumpBindings({ frameworkRoot: PROJECT_ROOT, cwd });
-
-    const proc = spawnSync(
-        "python3",
-        ["scripts/dump_bindings.py", "--framework-root", PROJECT_ROOT, "--cwd", cwd],
-        { encoding: "utf8", cwd: PROJECT_ROOT },
-    );
-    assertLib.equal(proc.status, 0, `python3 dump_bindings.py failed:\n${proc.stderr}`);
-    const pyResult = JSON.parse(proc.stdout);
-
-    // Strip fields that may legitimately differ (TS may surface a richer
-    // requires/preferences object; PY also surfaces them — assert they
-    // match in shape and value).
-    assertLib.deepEqual(tsResult.role_groups, pyResult.role_groups);
-    assertLib.deepEqual(
-        Object.keys(tsResult.bindings).sort(),
-        Object.keys(pyResult.bindings).sort(),
-    );
-    for (const role of Object.keys(tsResult.bindings).sort()) {
-        const t = tsResult.bindings[role]!;
-        const p = pyResult.bindings[role]!;
-        assertLib.equal(t.alias, p.alias, `${role}: alias mismatch`);
-        assertLib.deepEqual(t.channels, p.channels, `${role}: channels mismatch`);
-        assertLib.deepEqual(t.fallback_chain, p.fallback_chain, `${role}: fallback_chain mismatch`);
-        assertLib.deepEqual(t.requires, p.requires, `${role}: requires mismatch`);
-        assertLib.deepEqual(t.preferences, p.preferences, `${role}: preferences mismatch`);
     }
 });

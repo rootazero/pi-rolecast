@@ -4,6 +4,56 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-07
+
+### ⚠ BREAKING CHANGE — Pure Node. No more Python dependency at install or runtime.
+
+The framework now ships entirely as a TypeScript extension and Node CLI. The runtime no longer requires Python to be installed on the user's machine; the install-time `pip install -r requirements.txt` step has been removed; and the Pi extension no longer spawns any `python3` subprocess. Developer-facing test scripts may still use Python (`pytest`, `yaml`) — these run only in CI / on a contributor's machine, never on a user's box.
+
+#### What was removed
+
+- `scripts/profile_loader.py` (690 lines) — replaced by `src/profile_loader.ts` (~1,200 lines)
+- `scripts/dump_bindings.py` (92 lines) — replaced by `src/dump_bindings.ts` (~580 lines, in-process via `loadBindings()`)
+- `scripts/scaffolder.py` (291 lines) — replaced by `src/scaffolder.ts` (~450 lines)
+- `scripts/gate_runner.py` (155 lines) — replaced by `src/gate_runner.ts` (~450 lines)
+- `scripts/sync_settings.py` (380 lines) — replaced by `src/sync_settings.ts` (~600 lines)
+- `requirements.txt` — PyYAML is now a transitive dependency of `js-yaml` (npm), no pip install needed
+- The `--no-pip` flag from `install.sh` — the installer no longer touches pip at all
+
+#### Migration guide
+
+For users on v0.4.x who upgraded in-place:
+
+1. **Update `dist/`.** `npm install pi-rolecast` will overwrite the previous version. If you pinned to a specific version, `npm install pi-rolecast@0.5.0` will install the new tarball.
+2. **Rebuild from source (only if you cloned the repo).** `npm install && npm run build` will now succeed without `pip install -r requirements.txt`.
+3. **Manual CLI invocations change from `python3 scripts/X.py` to `node dist/X.js`.** Concretely:
+   - `python3 scripts/scaffolder.py init` → `node dist/scaffolder.js init`
+   - `python3 scripts/scaffolder.py validate --profile .pi/rolecast.yaml` → `node dist/scaffolder.js validate --profile .pi/rolecast.yaml`
+   - `python3 scripts/scaffolder.py diff --profile .pi/rolecast.yaml` → `node dist/scaffolder.js diff --profile .pi/rolecast.yaml`
+   - `python3 scripts/gate_runner.py --profile .pi/rolecast.yaml` → `node dist/gate_runner.js --profile .pi/rolecast.yaml`
+   - `python3 scripts/sync_settings.py --status` → `node dist/sync_settings.js --status`
+   - `python3 scripts/sync_settings.py --clear` → `node dist/sync_settings.js --clear`
+   - Or just use the `/rolecast-*` slash commands — they still work and now route to the in-process TS modules instead of spawning a Python subprocess.
+4. **`install.sh` no longer installs Python deps.** It now uses `jq` (instead of a `python3 -c "import yaml"` probe) for the pi-subagents settings.json check. Make sure `jq` is on your `PATH` (it ships with most Linux distros and macOS via Homebrew).
+5. **`uninstall.sh` no longer relies on Python either.** It uses an inline Node heredoc to scrub the framework's entries from `~/.pi/agent/settings.json`.
+
+#### Why now
+
+Per the maintainer's direction: pi + pi's plugin system are npm + Node, and forcing Python on users just to install a Pi plugin was a real friction point (especially on Windows, where Python may be missing or only have the stdlib — see the v0.4.4 PyYAML fix that this version fully supersedes). The previous v0.4.4 fix added a graceful error message when PyYAML was missing; v0.5.0 eliminates the root cause entirely.
+
+#### What was added
+
+- **`sync_settings` tool + `/rolecast-sync` slash command.** Previously `sync_settings.py` was only callable via `install.sh` (and `setup.sh` in the e2e tests). Now the Pi extension exposes it both as a model-callable tool and as a slash command, so the orchestrator can re-sync profile bindings to project-local `.pi/agents/*.md` files mid-session without restarting pi.
+- **5 new slash commands / 5 tools total** (was 4 / 4). Full list in README.
+- **`README.md`** updated: prerequisites section no longer lists Python, "Bridging profile bindings to pi dispatch" shows Node commands, every "Manual install" section uses `node dist/X.js` examples.
+
+#### Tests
+
+- `npm test` covers the in-process TS modules (`test_profile_loader.ts`, `test_dump_bindings.ts`, `test_scaffolder.ts`, `test_gate_runner.ts`, `test_sync_settings.ts`, `test_extension.ts`, `test_model_resolver.ts`, `test_dynamic_binding_smoke.ts`). 142 tests pass on Node 20.
+- 6 Python pytest files preserved for YAML structure / role-packs / SKILL.md validation and integration tests against `install.sh` / `uninstall.sh` (`tests/unit/test_registry_resolution.py`, `tests/unit/test_role_agents.py`, `tests/unit/test_skill_md.py`, `tests/integration/test_install.py`, `tests/integration/test_uninstall.py`, `tests/integration/test_dispatch_model.py`).
+- 5 Python pytest files deleted alongside the Python scripts they covered (`test_gate_runner.py`, `test_sync_settings.py`, `test_profile_loader.py`, `test_scaffolder.py`, `test_sample_rust_workflow.py`).
+
+
 ## [0.4.4] — 2026-10-06
 
 ### Fixed
