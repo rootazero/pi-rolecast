@@ -55,14 +55,16 @@ export function autoDetectLanguages(projectRoot: string): string[] {
  * Return the single best-guess language (spec §9.2 priority order),
  * or null if ambiguous / unknown.
  *
- * Ambiguity is narrow: detected == ["typescript", "javascript"]
- * (package.json-only). Other languages override the ambiguity — e.g.
- * Cargo.toml + package.json still yields "rust" via priority order.
+ * Ambiguity (package.json-only, no tsconfig.json) resolves to "javascript":
+ * absence of tsconfig.json is the strongest available signal that the
+ * project is plain JS rather than TS. Users who have a TS project
+ * without a committed tsconfig.json yet can pass `--template typescript`
+ * explicitly.
  */
 export function detectLanguage(projectRoot: string): string | null {
     const detected = autoDetectLanguages(projectRoot);
     if (detected.length === 2 && detected.includes("typescript") && detected.includes("javascript")) {
-        return null;
+        return "javascript";
     }
     const confident = detected.filter((l) => l !== "javascript");
     if (confident.length === 1) return confident[0]!;

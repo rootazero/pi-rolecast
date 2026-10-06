@@ -4,6 +4,12 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-10-07
+
+### Fixed
+
+- **`scaffoldInit` now bootstraps plain JavaScript projects without `--template`.** Previously, a project containing only `package.json` (no `tsconfig.json`) hit an ambiguous-detect branch: `autoDetectLanguages` returned `["typescript", "javascript"]`, `detectLanguage` returned `null`, and the scaffolder failed with `could not auto-detect language (detected: ["typescript","javascript"]). Pass --template to pick one.` v0.5.2 makes the ambiguous case resolve to `"javascript"` — the absence of `tsconfig.json` is the strongest available signal that a project is plain JS rather than TS, and there is now a `templates/javascript.yaml` template (`node --check` for compile, `npx eslint .` for lint, `npx jest` for test, no `@ts-ignore` / `as any` forbidden-patterns). Users with a TS project that has not yet committed `tsconfig.json` can pass `--template typescript` explicitly. Same behavior as v0.4.x Python scaffolder — that scaffolder also rejected this case with the same message; v0.5.0 preserved the behavior; v0.5.2 fixes it.
+
 ## [0.5.1] — 2026-10-07
 
 ### Fixed

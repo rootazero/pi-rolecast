@@ -1,0 +1,42 @@
+framework_version: 0.2.0
+name: my-js-project
+description: |
+  Workflow for a plain JavaScript project (no TypeScript).
+
+workflow:
+  role_groups: [coding]
+
+gates:
+  compile:
+    commands:
+      - node --check $(find . -name '*.js' -not -path './node_modules/*' -not -path './dist/*' | head -50)
+    timeout: 300
+  lint:
+    commands:
+      - npx eslint .
+    timeout: 300
+  test:
+    commands:
+      - npx jest
+    timeout: 900
+
+bindings:
+  coding-architect:    {alias: opus-thinking-medium, channels: [official]}
+  coding-planner:      {alias: deepseek-verifiable, channels: [official]}
+  coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+  coding-tester:       {alias: deepseek-verifiable, channels: [official]}
+  coding-reviewer:     {alias: gpt-judgment-high, channels: [official, relay-default]}
+  coding-mapper:       {alias: deepseek-verifiable, channels: [official]}
+  coding-profiler:     {alias: deepseek-verifiable, channels: [official]}
+  coding-auditor:      {alias: opus-thinking-high, channels: [official]}
+  coding-canary:       {alias: minimax-fast, channels: [official]}
+  coding-docs:         {alias: minimax-medium, channels: [official]}
+  coding-orchestrator: {alias: gpt-judgment-medium, channels: [official, relay-default]}
+
+non_negotiables:
+  forbidden_patterns: []
+
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

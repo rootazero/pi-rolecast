@@ -75,15 +75,18 @@ test("autoDetectLanguages: typescript project (package.json + tsconfig.json) det
     }
 });
 
-test("autoDetectLanguages: package.json-only is ambiguous (typescript + javascript)", () => {
+test("autoDetectLanguages: package.json-only falls back to javascript", () => {
     const tmp = makeTempDir();
     try {
         touchFile(tmp, "package.json");
         const detected = autoDetectLanguages(tmp);
         assertLib.ok(detected.includes("typescript"));
         assertLib.ok(detected.includes("javascript"));
-        // detectLanguage returns null for the ambiguous case.
-        assertLib.equal(detectLanguage(tmp), null);
+        // v0.5.2: absence of tsconfig.json is a JS signal, so detectLanguage
+        // defaults to "javascript" instead of returning null. Users with a
+        // TS project that hasn't committed tsconfig.json yet can pass
+        // --template typescript explicitly.
+        assertLib.equal(detectLanguage(tmp), "javascript");
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -226,7 +229,7 @@ test("scaffoldInit: --dry-run does not write", () => {
     }
 });
 
-test("scaffoldInit: ambiguous (package.json only) returns ok=false with guidance", () => {
+test("scaffoldInit: package.json-only falls back to javascript template (v0.5.2)", () => {
     const tmp = makeTempDir();
     try {
         touchFile(tmp, "package.json");
@@ -234,8 +237,8 @@ test("scaffoldInit: ambiguous (package.json only) returns ok=false with guidance
             projectRoot: tmp,
             frameworkRoot: FRAMEWORK_ROOT,
         });
-        assertLib.equal(r.ok, false);
-        assertLib.ok(r.message.includes("--template"));
+        assertLib.equal(r.ok, true, `expected ok=true but got: ${r.message ?? "(no message)"}`);
+        assertLib.equal(r.template, "javascript");
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
