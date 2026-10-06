@@ -633,9 +633,13 @@ def test_dump_bindings_yaml_missing_returns_clean_message(monkeypatch, tmp_path,
     db = importlib.import_module("scripts.dump_bindings")
 
     # Override find_profile to point at our temp profile; override
-    # Path.cwd() so the default --cwd argument is sane.
+    # Path.cwd() so the default --cwd argument is sane. Pytest populates
+    # sys.argv with `pytest tests/unit/ -v`, which argparse would otherwise
+    # reject — clear it so dump_bindings' ArgumentParser sees a clean argv
+    # and picks up its own defaults (no --profile / --framework-root / --cwd).
     monkeypatch.setattr(db, "find_profile", lambda cwd: profile)
     monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(sys, "argv", ["dump_bindings"])
 
     rc = db.main()
 
