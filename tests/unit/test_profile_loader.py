@@ -614,21 +614,28 @@ def test_dump_bindings_yaml_missing_returns_clean_message(monkeypatch, tmp_path,
 
     # Capture the real __import__ BEFORE monkeypatching (see comment above).
     real_import = builtins.__import__
-    saved_yaml = sys.modules.get("yaml")
-    saved_dump_bindings = sys.modules.get("scripts.dump_bindings")
-    saved_profile_loader = sys.modules.get("scripts.profile_loader")
 
     def fake_import(name, *args, **kwargs):
         if name == "yaml" or name.startswith("yaml."):
             raise ImportError("No module named 'yaml' (simulated)")
         return real_import(name, *args, **kwargs)
 
+    # Drop every cache entry that lets dump_bindings reach the real yaml
+    # module via a different sys.modules key. dump_bindings does
+    # `sys.path.insert(0, scripts_dir); from profile_loader import (...)`
+    # so it imports profile_loader under the BARE name `profile_loader`
+    # (not `scripts.profile_loader`). If a previous test already imported
+    # `profile_loader` under either name, dump_bindings' re-import would
+    # pick up the cached yaml-loaded module and bypass our monkeypatched
+    # __import__ entirely. Symptom: db.load_profile.__module__ == 'profile_loader'
+    # (bare) with a fully-loaded yaml, so load_profile() succeeds and main()
+    # returns 0 with an empty `{"role_groups": [], "bindings": {}}` payload
+    # instead of raising ImportError → rc 2.
+    for key in ("scripts.dump_bindings", "scripts.profile_loader", "profile_loader"):
+        sys.modules.pop(key, None)
+
     monkeypatch.setattr(builtins, "__import__", fake_import)
     monkeypatch.setitem(sys.modules, "yaml", None)
-    if saved_dump_bindings is not None:
-        del sys.modules["scripts.dump_bindings"]
-    if saved_profile_loader is not None:
-        del sys.modules["scripts.profile_loader"]
 
     db = importlib.import_module("scripts.dump_bindings")
 
