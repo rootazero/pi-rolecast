@@ -50,6 +50,11 @@ import {
 	validateProfile,
 } from "./scaffolder.js";
 import {
+	runGate,
+	type PhaseResult,
+	type RunGateResult,
+} from "./gate_runner.js";
+import {
 	resolveModel,
 	type CapabilityPreference,
 	type CapabilityRequirement,
@@ -135,6 +140,13 @@ function summarize(result: RunResult, maxChars = 6000): string {
 	const combined = parts.join("\n");
 	if (combined.length <= maxChars) return combined;
 	return `${combined.slice(0, maxChars)}\n... (truncated, full output in script logs)`;
+}
+
+/** Adapt a RunGateResult into the RunResult shape summarize() expects. */
+function gateRunResultToRunResult(r: RunGateResult): RunResult {
+	const stdout = JSON.stringify(r.summary, null, 2);
+	const stderr = r.errorTail ?? "";
+	return { exitCode: r.exitCode, stdout, stderr };
 }
 
 // ---- Tool: scaffolder_init ----
@@ -319,13 +331,27 @@ const gateRunTool = defineTool({
 			}),
 		),
 	}),
-	async execute(_id, params, _signal, _onUpdate, _ctx) {
-		const args: string[] = [];
-		if (params.profile_path) args.push("--profile", params.profile_path);
-		if (params.phase) args.push("--phase", params.phase);
-		if (params.log_dir) args.push("--log-dir", params.log_dir);
+	async execute(_id, params, signal, _onUpdate, _ctx) {
 		// 10 minute ceiling so retries don't run forever in interactive sessions.
-		const result = await runPythonScript("gate_runner.py", args, { timeoutMs: 10 * 60_000 });
+		const ac = new AbortController();
+		const handle = setTimeout(() => ac.abort(), 10 * 60_000);
+		// Forward parent signal so user-cancel kills the gate runner.
+		const forwardAbort = () => ac.abort();
+		signal?.addEventListener("abort", forwardAbort);
+		let r: RunGateResult;
+		try {
+			r = await runGate({
+				profilePath: params.profile_path ?? projectProfile(process.cwd()),
+				frameworkRoot: FRAMEWORK_ROOT,
+				phase: params.phase ?? "all",
+				logDir: params.log_dir ?? ".pi/rolecast-logs",
+				signal: ac.signal,
+			});
+		} finally {
+			clearTimeout(handle);
+			signal?.removeEventListener("abort", forwardAbort);
+		}
+		const result = gateRunResultToRunResult(r);
 		return {
 			content: [{ type: "text", text: summarize(result) }],
 			details: { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr },
@@ -598,8 +624,22 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 	};
 	const runHandler = async (args: string, ctx: { ui: { notify: (msg: string, level?: "info" | "warning" | "error") => void } }) => {
 		const phase = args.trim();
-		const pyArgs = phase ? ["--phase", phase] : [];
-		const result = await runPythonScript("gate_runner.py", pyArgs, { timeoutMs: 10 * 60_000 });
+		// 10 minute ceiling so retries don't run forever in interactive sessions.
+		const ac = new AbortController();
+		const handle = setTimeout(() => ac.abort(), 10 * 60_000);
+		let r: RunGateResult;
+		try {
+			r = await runGate({
+				profilePath: findProjectProfile(process.cwd()) ?? projectProfile(process.cwd()),
+				frameworkRoot: FRAMEWORK_ROOT,
+				phase: phase || "all",
+				logDir: ".pi/rolecast-logs",
+				signal: ac.signal,
+			});
+		} finally {
+			clearTimeout(handle);
+		}
+		const result = gateRunResultToRunResult(r);
 		ctx.ui.notify(summarize(result, 2000), result.exitCode === 0 ? "info" : "error");
 	};
 

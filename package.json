@@ -41,7 +41,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "tsx --test tests/unit/test_extension.ts tests/unit/test_model_resolver.ts tests/unit/test_profile_loader.ts tests/unit/test_dump_bindings.ts tests/unit/test_scaffolder.ts tests/integration/test_dynamic_binding_smoke.ts",
+    "test": "tsx --test tests/unit/test_extension.ts tests/unit/test_model_resolver.ts tests/unit/test_profile_loader.ts tests/unit/test_dump_bindings.ts tests/unit/test_scaffolder.ts tests/unit/test_gate_runner.ts tests/integration/test_dynamic_binding_smoke.ts",
     "prepublishOnly": "npm run typecheck && npm run build && npm test"
   },
   "keywords": [
