@@ -1,13 +1,28 @@
 from pathlib import Path
 
 # v0.2.0: roles live in role-packs/<group>/<role>.md and use full prefixed
-# names (`<group>-<role>`). The coding group ships 11 roles.
+# names (`<group>-<role>`).
+#
+# v0.7.0 (B-slot): the coding group split into a coding triad (architect /
+# planner / coder) + tester, plus a five-role audit team (judge / countersign /
+# notary / secretariat + mapper for context). Fixer is the finalization phase
+# of a coder dispatch (ADR-0034). v0.7.0 also renamed the dispatcher (removed)
+# and the diarist (replaces coding-docs).
+#
+# v0.8.0 (F-slot): the four legacy role-pack files
+# (coding-{implementer,reviewer,docs,orchestrator}.md) were hard-deleted.
+# The roster below is the only canonical source of truth for what should be
+# on disk.
 ROLE_PACKS_DIR = Path(__file__).resolve().parents[2] / "role-packs"
 CODING_ROLES = [
-    "coding-orchestrator", "coding-architect", "coding-planner",
-    "coding-implementer", "coding-tester", "coding-reviewer",
-    "coding-mapper", "coding-profiler", "coding-auditor",
-    "coding-canary", "coding-docs",
+    # core triad + tester
+    "coding-architect", "coding-planner", "coding-coder", "coding-tester",
+    # audit team
+    "coding-judge", "coding-countersign", "coding-notary", "coding-secretariat",
+    # context + finalization
+    "coding-mapper", "coding-fixer", "coding-diarist",
+    # reliability + observability
+    "coding-profiler", "coding-auditor", "coding-canary",
 ]
 
 
