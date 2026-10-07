@@ -54,7 +54,7 @@ Always emit, in this exact order:
    - {file:line or 'gate:<name>'} — {exact quoted excerpt, max 200 chars}
    ```
 2. **NOT_EVALUATED**: any topic the judge asked about but you could not
-   verify (e.g. "could not run cargo test because no toolchain"), or
+   verify (e.g. "could not run the test suite because no toolchain"), or
    `none`.
 
 If the request asks for an opinion, return:
