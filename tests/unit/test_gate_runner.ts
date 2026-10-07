@@ -13,7 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runGate, type RunGateOptions } from "../../src/gate_runner.js";
+import { runGate, resolveAuditRoles, type RunGateOptions } from "../../src/gate_runner.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,12 +58,15 @@ function profileYaml(opts: {
     phases?: Record<string, { commands: string[]; timeout: number }>;
     maxAttempts?: number;
     onFailure?: "stop" | "continue";
+    auditRoles?: Record<string, string[]>;
+    bindings?: Record<string, { alias: string; channels: string[] }>;
 }): string {
     const phases = opts.phases ?? {
         phase_a: { commands: ["true"], timeout: 10 },
     };
     const maxAttempts = opts.maxAttempts ?? 1;
     const onFailure = opts.onFailure ?? "stop";
+    const auditRoles = opts.auditRoles ?? {};
     // phaseBlock is indented 10 spaces so that, after the template's
     // 8-space dedent pass in writeProfile(), the gates: keys end up
     // at 2-space indent — a child of the top-level gates: mapping.
@@ -75,8 +78,23 @@ function profileYaml(opts: {
             phaseLines.push(`              - ${JSON.stringify(cmd)}`);
         }
         phaseLines.push(`            timeout: ${def.timeout}`);
+        if (auditRoles[name]) {
+            phaseLines.push(`            audit_roles:`);
+            for (const r of auditRoles[name]!) {
+                phaseLines.push(`              - ${JSON.stringify(r)}`);
+            }
+        }
     }
     const phaseBlock = phaseLines.join("\n");
+    const bindings = opts.bindings ?? {
+        "coding-architect": { alias: "opus-thinking-medium", channels: ["official"] },
+        "coding-planner": { alias: "deepseek-verifiable", channels: ["official"] },
+    };
+    const bindingLines: string[] = ["        bindings:"];
+    for (const [name, def] of Object.entries(bindings)) {
+        bindingLines.push(`          ${name}: {alias: ${def.alias}, channels: [${def.channels.join(", ")}]}`);
+    }
+    const bindingBlock = bindingLines.join("\n");
     return `
         framework_version: 0.2.0
         name: gate-runner-test-fixture
@@ -89,8 +107,7 @@ function profileYaml(opts: {
         gates:
 ${phaseBlock}
 
-        bindings:
-          coding-orchestrator: {alias: opus-thinking-medium, channels: [official]}
+${bindingBlock}
 
         non_negotiables:
           forbidden_patterns: []
@@ -408,6 +425,101 @@ test("runGate: summary shape is JSON-serialisable with required keys", async () 
         assertLib.equal(s.exitCode, 1);
         assertLib.ok(Array.isArray(s.phases));
         assertLib.equal(s.phases.length, 2);
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// v0.6.0 (D2) — audit_roles metadata + typo-safety
+// ─────────────────────────────────────────────────────────────────────
+
+test("resolveAuditRoles: empty declared list => no unresolved", () => {
+    assertLib.deepEqual(resolveAuditRoles([], { "coding-judge": {} }), []);
+    assertLib.deepEqual(resolveAuditRoles([], undefined), []);
+});
+
+test("resolveAuditRoles: all roles resolve against the bindings map => no unresolved", () => {
+    assertLib.deepEqual(
+        resolveAuditRoles(["coding-judge", "notary"], {
+            "coding-judge": {},
+            "notary": {},
+        }),
+        [],
+    );
+});
+
+test("resolveAuditRoles: unknown role is reported as unresolved", () => {
+    assertLib.deepEqual(
+        resolveAuditRoles(["coding-judge", "ghost-role"], {
+            "coding-judge": {},
+        }),
+        ["ghost-role"],
+    );
+});
+
+test("resolveAuditRoles: bindings undefined means everything is unresolved", () => {
+    // Defensive: when profile has no resolved_bindings, we cannot
+    // validate, so the safe call is to surface every declared role.
+    assertLib.deepEqual(
+        resolveAuditRoles(["coding-judge", "notary"], undefined),
+        ["coding-judge", "notary"],
+    );
+});
+
+test("runGate: audit_roles that all resolve is recorded on the phase result", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect", "coding-planner"] },
+        }));
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        assertLib.equal(r.ok, true);
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.deepEqual(ph?.audit_roles, ["coding-architect", "coding-planner"]);
+        assertLib.deepEqual(ph?.audit_unresolved, []);
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+test("runGate: unresolved audit_roles fails the phase even when commands pass", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect", "ghost-role"] },
+        }));
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        assertLib.equal(r.ok, false);
+        assertLib.equal(r.exitCode, 1);
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.status, "fail");
+        assertLib.deepEqual(ph?.audit_unresolved, ["ghost-role"]);
+        assertLib.match(ph?.last_failure?.stderr_tail ?? "", /ghost-role/);
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+test("runGate: phases without audit_roles are unaffected (backward compatible)", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+        }));
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.status, "pass");
+        assertLib.equal(ph?.audit_roles, undefined);
+        assertLib.equal(ph?.audit_unresolved, undefined);
     } finally {
         cleanup(tmp, logDir);
     }

@@ -29,6 +29,10 @@ export interface BindingPayload {
     fallback_chain: string[];
     requires: Record<string, unknown>;
     preferences: Record<string, unknown>;
+    // v0.6.0: runtime hook fields (A2 + A5). Optional so older extensions
+    // that pre-date these fields still load.
+    allowed_tools?: string[] | null;
+    forbidden_bash_patterns?: string[];
 }
 
 export interface DumpBindingsResult {
@@ -57,13 +61,21 @@ function bindingPayload(
     const preferences = rolePack !== undefined
         ? { ...(rolePack.preferences ?? {}) }
         : {};
-    return {
+    const out: BindingPayload = {
         alias: binding.alias,
         channels: [...binding.channels],
         fallback_chain: [...(binding.fallback_chain ?? [])],
         requires,
         preferences,
     };
+    // v0.6.0: surface runtime-hook fields when the role-pack declares
+    // them. The extension's tool_call hook reads allowed_tools /
+    // forbidden_bash_patterns to enforce narrowing at dispatch time.
+    if (rolePack !== undefined) {
+        out.allowed_tools = rolePack.allowed_tools ?? null;
+        out.forbidden_bash_patterns = [...(rolePack.forbidden_bash_patterns ?? [])];
+    }
+    return out;
 }
 
 function defaultFrameworkRoot(profilePath: string): string {

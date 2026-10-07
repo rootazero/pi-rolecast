@@ -53,6 +53,15 @@ export interface PhaseResult {
         stderr_tail: string;
     };
     reason?: string;
+    /**
+     * v0.6.0 (D2) — audit_roles declared on this phase plus how each
+     * resolved against the profile's bindings. `audit_unresolved` lists
+     * roles that did not match any binding (typo / stale reference) and
+     * is the immediate cause of a phase FAIL when audit_roles is the
+     * gate's primary enforcement surface.
+     */
+    audit_roles?: string[];
+    audit_unresolved?: string[];
 }
 
 export interface GateSummary {
@@ -152,7 +161,7 @@ interface RunStatsInternal {
 }
 
 async function runPhases(
-    profile: { name: string; framework_version: string; gates: Record<string, GateDef>; escalation: EscalationDef },
+    profile: { name: string; framework_version: string; gates: Record<string, GateDef>; escalation: EscalationDef; resolved_bindings?: Record<string, unknown> },
     phaseNames: string[],
     runDir: string,
     signal?: AbortSignal,
@@ -184,13 +193,14 @@ async function runPhases(
 }
 
 async function runPhase(
-    profile: { gates: Record<string, GateDef>; escalation: EscalationDef },
+    profile: { gates: Record<string, GateDef>; escalation: EscalationDef; resolved_bindings?: Record<string, unknown> },
     phaseName: string,
     runDir: string,
     signal?: AbortSignal,
 ): Promise<{ result: PhaseResult; errorTail: string }> {
     const phase = profile.gates[phaseName]!;
     const commands = phase.commands ?? [];
+    const auditRoles = Array.isArray(phase.audit_roles) ? phase.audit_roles : [];
     const timeout = typeof phase.timeout === "number" ? phase.timeout : 300;
     const maxAttempts = Math.max(1, profile.escalation.max_attempts);
     const started = Date.now();
@@ -214,6 +224,30 @@ async function runPhase(
         fs.mkdirSync(path.dirname(logPath), { recursive: true });
         const r = await runCommands(commands, timeout, logPath, signal);
         if (r.rc === 0) {
+            const unresolved = resolveAuditRoles(auditRoles, profile.resolved_bindings);
+            if (unresolved.length > 0) {
+                // Audit roles were declared but did not resolve. Even
+                // when commands succeeded, this is a configuration error
+                // the gate runner must surface, not bury.
+                return {
+                    result: {
+                        name: phaseName,
+                        status: "fail",
+                        attempts: attempt,
+                        duration_s: round2((Date.now() - started) / 1000),
+                        log: logPath,
+                        audit_roles: auditRoles,
+                        audit_unresolved: unresolved,
+                        last_failure: {
+                            attempt,
+                            returncode: r.rc,
+                            stdout_tail: r.stdout.slice(-500),
+                            stderr_tail: `unresolved audit_roles: ${unresolved.join(", ")}`,
+                        },
+                    },
+                    errorTail: `unresolved audit_roles: ${unresolved.join(", ")}`,
+                };
+            }
             return {
                 result: {
                     name: phaseName,
@@ -221,6 +255,8 @@ async function runPhase(
                     attempts: attempt,
                     duration_s: round2((Date.now() - started) / 1000),
                     log: logPath,
+                    audit_roles: auditRoles.length > 0 ? auditRoles : undefined,
+                    audit_unresolved: auditRoles.length > 0 ? [] : undefined,
                 },
                 errorTail,
             };
@@ -241,9 +277,35 @@ async function runPhase(
             duration_s: round2((Date.now() - started) / 1000),
             log_dir: runDir,
             last_failure: lastFailure,
+            audit_roles: auditRoles.length > 0 ? auditRoles : undefined,
+            audit_unresolved: resolveAuditRoles(auditRoles, profile.resolved_bindings),
         },
         errorTail,
     };
+}
+
+/**
+ * v0.6.0 (D2) — audit-role resolution check.
+ *
+ * If the gate phase declared `audit_roles: string[]`, every role must
+ * resolve against the profile's bindings (typo + stale-reference
+ * safety). Returns the list of unresolved roles; an empty array means
+ * all declared roles are recognized.
+ *
+ * Real LLM-driven audit invocation remains the profile author's
+ * responsibility — declared under `commands:`. This helper catches
+ * declarative typos; it does not invoke the roles itself.
+ */
+export function resolveAuditRoles(
+    declared: string[],
+    resolvedBindings: Record<string, unknown> | undefined,
+): string[] {
+    if (declared.length === 0) return [];
+    if (resolvedBindings === undefined) {
+        return [...declared];
+    }
+    const known = new Set(Object.keys(resolvedBindings));
+    return declared.filter((r) => !known.has(r));
 }
 
 interface RunCommandsResult {
@@ -440,6 +502,14 @@ function emptySummary(profileName: string): GateSummary {
 interface GateDef {
     commands?: string[];
     timeout?: number;
+    /**
+     * v0.6.0 (D2) — audit roles expected to verify this phase. Each
+     * entry must resolve against `profile.resolved_bindings`. Real
+     * invocation is delegated to the profile's `commands:` block (the
+     * framework cannot dispatch sub-agents from the gate runner
+     * itself). This field provides declarative + typo-safety surface.
+     */
+    audit_roles?: string[];
 }
 
 interface EscalationDef {

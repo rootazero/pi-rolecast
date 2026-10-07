@@ -470,6 +470,17 @@ interface BindingsSnapshot {
 let bindingsCache: BindingsSnapshot | null = null;
 let bindingsCacheCwd: string | null = null;
 
+// v0.6.0 (A2/A5) — runtime enforcement state.
+// The most recently dispatched Agent subagent_type. Tool calls that fire
+// AFTER this dispatch are checked against the role's allowed_tools and
+// forbidden_bash_patterns. Limitations: pi's extension API does not
+// expose an explicit "subagent_end" event, so we cannot unwind on nested
+// dispatches. Sequential dispatches work (each new Agent replaces the
+// currentRole); parallel subagents within one main-session turn will
+// inherit the LAST dispatched role's restrictions. The main session's
+// own tool calls (before any Agent dispatch) are unrestricted.
+let currentRole: string | null = null;
+
 function loadBindings(cwd: string): BindingsSnapshot {
 	// v0.5.0: pure TS path — no python3 subprocess. dumpBindings() reads
 	// .pi/rolecast.yaml directly via src/profile_loader.ts and returns the
@@ -845,39 +856,54 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// tool_call: when the Agent tool is invoked with a subagent_type matching
-	// a cached binding, resolve a concrete model and inject it as `model:`.
+	// tool_call: two responsibilities
+	//   (1) Agent dispatch — resolve model + record currentRole for the
+	//       subsequent subagent's tool calls.
+	//   (2) Non-Agent tool enforcement — when currentRole is set and the
+	//       role declares allowed_tools or forbidden_bash_patterns, block
+	//       any tool call outside that surface.
 	pi.on("tool_call", (event, ctx) => {
 		const extCtx = ctx as unknown as { modelRegistry: PiModelRegistryLike; scopedModels: ReadonlyArray<{ provider: string; id: string }> };
-		// CustomToolCallEvent covers any non-built-in tool — pi-subagents'
-		// "Agent" tool falls into this branch.
 		const input = event.input as Record<string, unknown> | undefined;
 		if (!input) return;
-		if (event.toolName !== "Agent") return;
-		const subagentType = input.subagent_type;
-		if (typeof subagentType !== "string" || subagentType.length === 0) return;
 		if (bindingsCache === null) return;
-		const payload = bindingsCache.bindings[subagentType];
-		if (!payload) return;
-		const registry = makeResolverRegistry(extCtx.modelRegistry);
-		const result = resolveForRole(subagentType, {
-			binding: payload,
-			scopedModels: extCtx.scopedModels,
-			registry,
-		});
-		if (!result.ok) {
-			return {
-				block: true,
-				reason:
-					`pi-rolecast: cannot resolve a model for role '${subagentType}'. ` +
-					`${result.reason}. Run /rolecast-status for details.`,
-				terminate: true,
-			};
+
+		if (event.toolName === "Agent") {
+			const subagentType = input.subagent_type;
+			if (typeof subagentType !== "string" || subagentType.length === 0) return;
+			const payload = bindingsCache.bindings[subagentType];
+			if (!payload) return;
+			const registry = makeResolverRegistry(extCtx.modelRegistry);
+			const result = resolveForRole(subagentType, {
+				binding: payload,
+				scopedModels: extCtx.scopedModels,
+				registry,
+			});
+			if (!result.ok) {
+				return {
+					block: true,
+					reason:
+						`pi-rolecast: cannot resolve a model for role '${subagentType}'. ` +
+						`${result.reason}. Run /rolecast-status for details.`,
+					terminate: true,
+				};
+			}
+			// Only inject if the caller did not already pick a model.
+			if (typeof input.model !== "string" || input.model.length === 0) {
+				input.model = result.model.slashForm;
+			}
+			// Record the dispatched role so subsequent tool calls inside
+			// this subagent can be checked against allowed_tools / seatbelt.
+			currentRole = subagentType;
+			return;
 		}
-		// Only inject if the caller did not already pick a model.
-		if (typeof input.model !== "string" || input.model.length === 0) {
-			input.model = result.model.slashForm;
-		}
+
+		// Non-Agent tool: enforce the active role's narrowing when present.
+		return enforceRoleNarrowing(
+			{ toolName: event.toolName, input },
+			bindingsCache.bindings,
+			currentRole,
+		);
 	});
 
 	// input: rewrite leading @handle mentions that match a cached binding
@@ -889,4 +915,81 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		if (!t.handle) return;
 		return { action: "transform", text: t.text, images: event.images };
 	});
+}
+
+/**
+ * Extract the bash command string from a bash tool call's input payload.
+ * Pi's bash tool accepts the command in several shapes depending on
+ * version: `{ command }`, `{ cmd }`, or `{ script }`. Returns the first
+ * string it finds, or null if none.
+ */
+function readBashCommand(input: Record<string, unknown>): string | null {
+	const candidates = ["command", "cmd", "script"];
+	for (const key of candidates) {
+		const v = input[key];
+		if (typeof v === "string" && v.length > 0) return v;
+	}
+	return null;
+}
+
+/**
+ * v0.6.0 (A2/A5) — pure enforcement helper, exported for testability.
+ *
+ * Given a tool_call event and the bindings cache plus the currently
+ * dispatched role, return a decision: `{ block: true, reason }` to
+ * block the call, or `undefined` to allow it.
+ *
+ * Rules:
+ *   - If currentRole is null, no role narrowing applies — allow.
+ *   - If the role declares allowed_tools (non-null), every tool call must
+ *     be in that whitelist; otherwise block with reason.
+ *   - If the tool is bash AND the role declares forbidden_bash_patterns,
+ *     the bash command payload is scanned for any forbidden substring;
+ *     a hit blocks with reason.
+ */
+export function enforceRoleNarrowing(
+	event: { toolName: string; input: Record<string, unknown> },
+	bindings: Record<string, BindingPayload>,
+	currentRole: string | null,
+): { block: true; reason: string; terminate?: boolean } | undefined {
+	if (currentRole === null) return undefined;
+	const activeBinding = bindings[currentRole];
+	if (activeBinding === undefined) return undefined;
+
+	// (A2) allowed_tools narrowing.
+	if (Array.isArray(activeBinding.allowed_tools)) {
+		const allow = activeBinding.allowed_tools;
+		if (!allow.includes(event.toolName)) {
+			return {
+				block: true,
+				reason:
+					`pi-rolecast: role '${currentRole}' is not allowed to call tool '${event.toolName}'. ` +
+					`Allowed tools: ${allow.join(", ") || "(none)"}. ` +
+					`Update the role's allowed_tools frontmatter or pick a different role.`,
+			};
+		}
+	}
+
+	// (A5) bash seatbelt.
+	if (event.toolName === "bash" && Array.isArray(activeBinding.forbidden_bash_patterns)) {
+		const forbidden = activeBinding.forbidden_bash_patterns;
+		if (forbidden.length > 0) {
+			const cmd = readBashCommand(event.input);
+			if (cmd !== null) {
+				for (const pattern of forbidden) {
+					if (typeof pattern === "string" && pattern.length > 0 && cmd.includes(pattern)) {
+						return {
+							block: true,
+							reason:
+								`pi-rolecast: role '${currentRole}' triggered the bash seatbelt. ` +
+								`Forbidden pattern '${pattern}' found in command. ` +
+								`If this command is genuinely required, dispatch it via the main session.`,
+						};
+					}
+				}
+			}
+		}
+	}
+
+	return undefined;
 }

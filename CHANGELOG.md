@@ -49,15 +49,15 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 - `coding-docs` → use `coding-diarist`
 - `coding-orchestrator` → caller composes via Agent tool (ADR-0010)
 
-### Deferred (not yet shipped)
+### Added (D套 — runtime enforcement + schema reference)
 
-- **`extension.ts` `tool_call` hook for `allowed_tools` enforcement.** The framework emits the "Tool restrictions" block in generated agent files (visible to pi's prompt layer), but a runtime enforcement hook is not yet implemented. Users who want strict enforcement today must rely on the prompt-level block or invoke `coding-fixer` which has the bash seatbelt prompt.
-- **`gate_runner` audit-phase enforcement.** The framework can validate that a profile declares `audit` gates, but the runner does not yet enforce an audit phase (judge + countersign + notary + secretariat). Profiles that opt into the audit triad today must invoke the roles manually.
-- **`profile-schema.md` reference doc.** The CHANGELOG entry above and `references/v0.6.0-optimization-roadmap.md` (425 lines) serve as the design-of-record for v0.6.0. A standalone `docs/profile-schema.md` is planned for v0.6.1.
+- **`src/extension.ts` `tool_call` hook for `allowed_tools` / `forbidden_bash_patterns` enforcement.** The hook now records the active role after each `Agent` dispatch and applies `enforceRoleNarrowing(event, bindings, currentRole)` to every subsequent non-`Agent` tool call. A2: when the role declares `allowed_tools`, calls outside the list are blocked. A5: when the tool is `bash` and the role declares `forbidden_bash_patterns`, the bash payload (key `command` / `cmd` / `script`) is scanned for any forbidden substring and a hit blocks. The pure helper is exported and covered by `tests/unit/test_runtime_hook.ts` (11 tests).
+- **`gate_runner` audit-role typo-safety.** `GateDef.audit_roles?: string[]` is a new optional field. The runner validates every declared audit role against `profile.resolved_bindings` and surfaces unresolved roles on the phase result. A phase with unresolved audit roles fails even when the shell commands succeed — this catches stale references at config-validation time rather than at audit-time. Real LLM-driven audit invocation remains the profile author's responsibility (via the `commands:` field); the framework cannot dispatch sub-agents from the gate runner itself. Pure helper `resolveAuditRoles(declared, resolvedBindings)` is exported. Covered by `tests/unit/test_gate_runner.ts` (4 helper + 3 integration tests).
+- **`docs/profile-schema.md`** (16 KB reference) — standalone schema doc covering v0.6.0. Sections: profile top-level, per-binding fields, role-pack frontmatter (including `allowed_tools` / `soul` / `forbidden_bash_patterns` / `phase_inputs` / `deprecated_redirect`), `LEGACY_ROLE_ALIASES` table, gates, non-negotiables, escalation, custom roles, workflow / role-groups, contracts, runtime enforcement, required minimum, versioning. Pairs with `references/v0.6.0-optimization-roadmap.md` (design history) and this CHANGELOG (release notes).
 
 ### Test coverage
 
-- **179 / 179 unit tests passing** (`npm test`). typecheck clean. New tests in `tests/unit/test_contracts.ts` (27) and `tests/unit/test_a2_a3_a5_injection.ts` (7) cover the A套 surface. The B/C套 surface is exercised by `test_profile_loader.ts` (end-to-end rewrite test now that targets ship) and the existing fixture-driven tests.
+- **197 / 197 unit tests passing** (`npm test`). typecheck clean. v0.6.0 surface is covered by `test_contracts.ts` (27), `test_a2_a3_a5_injection.ts` (7), `test_runtime_hook.ts` (11), and 7 new D2 tests in `test_gate_runner.ts`. The fixture-driven end-to-end tests (`test_profile_loader.ts`, `test_dump_bindings.ts`) exercise the B/C套 rewrite path now that targets ship.
 
 ## [0.5.2] — 2026-10-07
 
