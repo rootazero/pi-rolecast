@@ -1,7 +1,8 @@
 ---
 name: coding-docs
 category: coding
-description: Write READMEs, visual assets, frontend copy, documentation.
+deprecated_redirect: coding-diarist
+description: "DEPRECATED — write READMEs and documentation. Renamed to coding-diarist in v0.6.0 for ak semantics alignment. This file is preserved for one release; LEGACY_ROLE_ALIASES rewrites references automatically."
 model: deepseek-flash
 thinking: medium
 model_tier: cheap

@@ -4,6 +4,61 @@ All notable changes to pi-rolecast are documented here. Format follows [Keep a C
 
 ## [Unreleased]
 
+### ⚠ BREAKING CHANGES (opt-in via `legacy_role_aliases`)
+
+- **`coding-implementer`, `coding-reviewer`, `coding-docs` are DEPRECATED** and rewritten to `coding-coder`, `coding-judge`, `coding-diarist` respectively. Old names keep loading for one release with a `DEPRECATED` warning on `profile.load_warnings`. New profiles should use the new names directly.
+- **`coding-orchestrator` is REMOVED.** Per ADR-0010, there is no in-pack dispatcher — callers compose workflows via the Agent tool. The old name produces a louder `REMOVED` warning at profile load and the binding is dropped. The file is preserved with `deprecated_redirect: null` for one release.
+- **`Profile.contracts` is now a parsed mapping (was unset).** Profiles can declare per-role output contracts under `contracts.<role>`. `validateAllContracts` runs on profile validation; violations surface as `ContractError` instances.
+
+### Added (A套 — output contracts + toolset narrowing)
+
+- **`Profile.contracts: Record<string, unknown>`.** Profiles can declare per-role output contracts (schema, payload checks, etc.) under a top-level `contracts:` mapping. Validated by `validateAllContracts` in `src/contracts.ts` (`validateContractSchema`, `checkContractPayload`, `ContractError`).
+- **`allowed_tools` frontmatter on role files (per ADR-0008).** Each role file may declare a narrowed toolset, e.g. `allowed_tools: [read, grep, find, ls]`. The framework `sync_settings.writeAgents` emits a "Tool restrictions" block in the generated `.pi/agents/<role>.md` so pi honors the narrowing at dispatch.
+- **`soul_path` frontmatter + soul prepending (per ADR-0005).** Roles can reference a soul file (default location: `role-packs/coding/souls/<name>.md`). The framework prepends the soul content to the generated agent file so the role's voice is consistent across dispatches. `souls/audit-law.md` ships as the canonical soul for audit-triad roles.
+- **`forbidden_bash_patterns` frontmatter + bash seatbelt (per ADR-0008).** Roles can declare a list of forbidden bash substrings; the framework emits a "Bash seatbelt" block in the generated agent file. The canonical four (`rm -rf`, `git reset --hard`, `git clean`, `git checkout --`) ship with `coding-coder` and `coding-fixer`.
+- **`Escalation.audit_max_resubmits`** (number, default `null` = unbounded per ADR-0007). Profiles can cap how many times a failing audit finding can be resubmitted before the orchestrator escalates permanently.
+- **`load_warnings: string[]` on the parsed `Profile`.** Forward-reference and deprecation warnings surface here instead of being silent. `dumpBindings` includes them in stdout when present.
+
+### Added (B套 — audit triad + worker split)
+
+- **Audit triad** (per ADR-0032): four new role files in `role-packs/coding/`:
+  - **`coding-judge`** — verdict seat; primary auditor; emits `GATES_GREEN` / `NEEDS_REWORK` / `SEATBELT_HIT`. Strong tier (`gpt-judgment-high`).
+  - **`coding-countersign`** — adversarial second pair of eyes; tries to refute the judge's verdict; either confirms or raises a counter-finding. Strong tier (`opus-thinking-high`).
+  - **`coding-notary`** — evidence collector; pulls exact passages, line numbers, test outputs, command results. Read-only — no bash. Cheap tier.
+  - **`coding-secretariat`** — audit log recorder; writes findings to a durable record. Opt-in. Cheap tier.
+  All four bind the audit-law soul and the four canonical forbidden bash substrings.
+- **Worker split (per ADR-0034):** the old `coding-implementer` is replaced by:
+  - **`coding-coder`** — two-phase worker (`plan` and `apply`). The dispatcher passes one phase per dispatch; coder refuses if neither is set. Balanced tier (`deepseek-verifiable`).
+  - **`coding-fixer`** — finalization phase (`finalize`). Runs gates, fixes the easy red, hands off the hard red. The bash seatbelt role. Balanced tier.
+  Old `coding-implementer` is preserved with `deprecated_redirect: coding-coder` for one release.
+
+### Added (C套 — dispatcher removal + diarist rename)
+
+- **`coding-orchestrator` deprecated with `deprecated_redirect: null`** (per ADR-0010). The dispatcher logic moves to the caller. No replacement role; the file is preserved for one release so users with old profiles see a `REMOVED` warning instead of a hard error.
+- **`coding-diarist`** — new name for `coding-docs` (ak semantics alignment: "diarist" = records findings for human readers). Allows `write`/`edit` but excludes `bash`. Old `coding-docs` is preserved with `deprecated_redirect: coding-diarist` for one release.
+
+### Changed
+
+- **`LEGACY_ROLE_ALIASES` table** added to `src/profile_loader.ts`. Maps four legacy role names to their v0.6.0 targets (or `null` for full removal). The table includes a **forward-reference guard**: if the target role is not yet shipped in `role-packs/`, the old name is kept and a `deferred rewrite` warning is emitted instead of breaking the profile. Once B套/C套 shipped, the guard lets the rewrite fire end-to-end.
+- **6 starter templates** (`rust`, `typescript`, `python`, `go`, `javascript`, `blank`) updated to use the new active role names and to comment-out the audit-triad + fixer bindings (they're opt-in).
+
+### Deprecated
+
+- `coding-implementer` → use `coding-coder`
+- `coding-reviewer` → use `coding-judge`
+- `coding-docs` → use `coding-diarist`
+- `coding-orchestrator` → caller composes via Agent tool (ADR-0010)
+
+### Deferred (not yet shipped)
+
+- **`extension.ts` `tool_call` hook for `allowed_tools` enforcement.** The framework emits the "Tool restrictions" block in generated agent files (visible to pi's prompt layer), but a runtime enforcement hook is not yet implemented. Users who want strict enforcement today must rely on the prompt-level block or invoke `coding-fixer` which has the bash seatbelt prompt.
+- **`gate_runner` audit-phase enforcement.** The framework can validate that a profile declares `audit` gates, but the runner does not yet enforce an audit phase (judge + countersign + notary + secretariat). Profiles that opt into the audit triad today must invoke the roles manually.
+- **`profile-schema.md` reference doc.** The CHANGELOG entry above and `references/v0.6.0-optimization-roadmap.md` (425 lines) serve as the design-of-record for v0.6.0. A standalone `docs/profile-schema.md` is planned for v0.6.1.
+
+### Test coverage
+
+- **179 / 179 unit tests passing** (`npm test`). typecheck clean. New tests in `tests/unit/test_contracts.ts` (27) and `tests/unit/test_a2_a3_a5_injection.ts` (7) cover the A套 surface. The B/C套 surface is exercised by `test_profile_loader.ts` (end-to-end rewrite test now that targets ship) and the existing fixture-driven tests.
+
 ## [0.5.2] — 2026-10-07
 
 ### Fixed

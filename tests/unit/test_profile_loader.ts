@@ -597,42 +597,57 @@ testApi("v0.6.0: LEGACY_ROLE_ALIASES exposes the four documented legacy roles", 
     assert.deepEqual(LEGACY_ROLE_ALIASES["coding-docs"], ["coding-diarist"]);
 });
 
-testApi("v0.6.0: legacy alias is deferred until target role exists in role-packs (B/C套 not yet shipped)", () => {
-    // As of v0.6.0-alpha (A套 landed, B/C套 pending), the alias targets
-    // coding-judge / coding-coder / coding-diarist do NOT yet exist in
-    // role-packs/. The forward-reference guard keeps the old name and
-    // emits a "deferred rewrite" warning instead of breaking the profile.
+testApi("v0.6.0: legacy alias rewrite fires when target role exists in role-packs (B/C套 shipped)", () => {
+    // After B套 (audit triad) and C套 (worker split + diarist rename + orchestrator
+    // deprecation) shipped, the LEGACY_ROLE_ALIASES targets — coding-judge,
+    // coding-coder, coding-diarist — exist in role-packs/. The rewrite now
+    // fires end-to-end: old names are replaced with new names, deprecated
+    // warnings are emitted, and coding-orchestrator is dropped with REMOVED.
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
-        name: legacy-test
-        description: test that legacy roles still resolve when targets are not yet shipped
+        name: legacy-rewrite-test
+        description: rewrite fires when B/C套 targets ship
         workflow:
           role_groups: [coding]
         bindings:
-          coding-reviewer: {alias: deepseek-verifiable, channels: [official]}
-          coding-implementer: {alias: deepseek-verifiable, channels: [official]}
-          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+          coding-reviewer:     {alias: gpt-judgment-high, channels: [official, relay-default]}
+          coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+          coding-docs:         {alias: minimax-medium, channels: [official]}
+          coding-orchestrator: {alias: gpt-judgment-medium, channels: [official, relay-default]}
+          coding-architect:    {alias: opus-thinking-medium, channels: [official]}
         escalation:
           max_attempts: 2
     `);
     const profile = loadProfile(profilePath, PROJECT_ROOT);
-    // Old keys preserved (targets not yet shipped).
-    assert.ok("coding-reviewer" in profile.bindings);
-    assert.ok("coding-implementer" in profile.bindings);
-    assert.ok("coding-architect" in profile.bindings);
-    // Two "deferred" warnings emitted — one per legacy alias.
-    assert.equal(profile.load_warnings.length, 2);
-    for (const w of profile.load_warnings) {
-        assert.match(w, /deferred/i, `expected 'deferred' in warning: ${w}`);
-    }
+    // Rewrites happened — old keys replaced with new.
+    assert.ok(!("coding-reviewer" in profile.bindings), "coding-reviewer should have been rewritten");
+    assert.ok(!("coding-implementer" in profile.bindings), "coding-implementer should have been rewritten");
+    assert.ok(!("coding-docs" in profile.bindings), "coding-docs should have been rewritten");
+    assert.ok("coding-judge" in profile.bindings, "coding-judge missing after rewrite");
+    assert.ok("coding-coder" in profile.bindings, "coding-coder missing after rewrite");
+    assert.ok("coding-diarist" in profile.bindings, "coding-diarist missing after rewrite");
+    assert.ok("coding-architect" in profile.bindings, "coding-architect preserved (not legacy)");
+    // coding-orchestrator dropped with REMOVED warning.
+    assert.ok(!("coding-orchestrator" in profile.bindings));
+    // Aliases and channels preserved across the rewrite (per ADR-0034:
+    // the binding surface carries forward; only the key changes).
+    assert.equal(profile.bindings["coding-judge"].alias, "gpt-judgment-high");
+    assert.deepEqual(profile.bindings["coding-judge"].channels, ["official", "relay-default"]);
+    assert.equal(profile.bindings["coding-coder"].alias, "deepseek-verifiable");
+    assert.equal(profile.bindings["coding-diarist"].alias, "minimax-medium");
+    // Warnings: three DEPRECATED (reviewer, implementer, docs) + one REMOVED
+    // (orchestrator). The orchestrator warning is louder (per ADR-0010).
+    const warnings = profile.load_warnings;
+    const hasDeprecated = warnings.some((w) => /deprecated/i.test(w));
+    const hasRemoved = warnings.some((w) => /removed/i.test(w));
+    assert.ok(hasDeprecated, `expected at least one DEPRECATED warning, got: ${JSON.stringify(warnings)}`);
+    assert.ok(hasRemoved, `expected REMOVED warning for orchestrator, got: ${JSON.stringify(warnings)}`);
+    // No "deferred" warnings should appear when targets ship.
+    const hasDeferred = warnings.some((w) => /deferred/i.test(w));
+    assert.ok(!hasDeferred, `unexpected DEFERRED warning after B/C套 shipped: ${JSON.stringify(warnings)}`);
     fs.rmSync(dir, { recursive: true, force: true });
 });
-
-// NOTE: end-to-end rewrite verification deferred to B套 (task 7). When
-// coding-judge.md and coding-coder.md ship, drop a profile using those
-// names into tests/fixtures/ and add a fixture-driven rewrite test here.
-// Until then, the deferred path is exercised by the test directly above.
 
 testApi("v0.6.0: coding-orchestrator binding is dropped with a louder warning", () => {
     const dir = makeTempDir();

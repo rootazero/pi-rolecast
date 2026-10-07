@@ -1,7 +1,8 @@
 ---
 name: coding-implementer
 category: coding
-description: Execute mechanical multi-file edits. Output is verifiable via project gates.
+deprecated_redirect: coding-coder
+description: "DEPRECATED — execute mechanical multi-file edits. Redirect to coding-coder (v0.6.0, ADR-0034 worker split). This file is preserved for one release; the LEGACY_ROLE_ALIASES table rewrites references automatically."
 model: deepseek-flash
 thinking: low
 model_tier: balanced

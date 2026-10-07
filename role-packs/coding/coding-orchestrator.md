@@ -1,7 +1,8 @@
 ---
 name: coding-orchestrator
 category: coding
-description: Coordinate the multi-agent workflow; dispatch to roles based on user intent.
+deprecated_redirect: null
+description: "DEPRECATED — central dispatcher role removed in v0.6.0 (ADR-0010). Callers compose workflows directly via the Agent tool; there is no in-pack orchestrator. This file is preserved for one release with deprecated_redirect set to null because there is no replacement role — the dispatcher logic moves to the caller. LEGACY_ROLE_ALIASES drops this binding with a REMOVED warning at profile load."
 model: deepseek-flash
 thinking: high
 model_tier: strong

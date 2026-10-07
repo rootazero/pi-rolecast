@@ -65,16 +65,26 @@ test("dumpBindings: real fixture emits bindings with expected keys", () => {
     assertLib.equal(result.loadError, undefined, `unexpected loadError: ${result.loadError}`);
     assertLib.ok(result.role_groups.includes("coding"), "expected 'coding' role group");
     const bindings = Object.keys(result.bindings).sort();
-    // The sample fixture binds all 11 legacy coding roles.
+    // The sample fixture declares 11 legacy coding roles. After
+    // LEGACY_ROLE_ALIASES rewrite (v0.6.0, B/C套 shipped):
+    //   coding-implementer → coding-coder
+    //   coding-reviewer    → coding-judge
+    //   coding-docs        → coding-diarist
+    //   coding-orchestrator dropped (null target)
     assertLib.ok(bindings.includes("coding-architect"));
     assertLib.ok(bindings.includes("coding-planner"));
-    assertLib.ok(bindings.includes("coding-implementer"));
+    assertLib.ok(bindings.includes("coding-coder"));
     assertLib.ok(bindings.includes("coding-tester"));
-    assertLib.ok(bindings.includes("coding-reviewer"));
+    assertLib.ok(bindings.includes("coding-judge"));
+    assertLib.ok(bindings.includes("coding-diarist"));
     // v0.6.0: coding-orchestrator is dropped via REMOVED warning.
     // Sample-rust fixture declared it; after the LEGACY_ROLE_ALIASES rewrite
     // it no longer appears in resolved bindings.
     assertLib.ok(!bindings.includes("coding-orchestrator"));
+    // Old names should not survive the rewrite.
+    assertLib.ok(!bindings.includes("coding-implementer"));
+    assertLib.ok(!bindings.includes("coding-reviewer"));
+    assertLib.ok(!bindings.includes("coding-docs"));
 });
 
 test("dumpBindings: each binding has alias/channels/fallback_chain/requires/preferences", () => {
@@ -103,10 +113,11 @@ test("dumpBindings: channels match the YAML binding's channels list", () => {
         frameworkRoot: PROJECT_ROOT,
         cwd: path.join(PROJECT_ROOT, "tests", "fixtures", "sample-rust"),
     });
-    // sample-rust: coding-reviewer has [official, relay-default]
-    const reviewer = result.bindings["coding-reviewer"];
-    assertLib.ok(reviewer, "coding-reviewer binding missing");
-    assertLib.deepEqual(reviewer.channels, ["official", "relay-default"]);
+    // sample-rust: coding-reviewer has [official, relay-default]. After
+    // v0.6.0 rewrite the binding key is coding-judge (alias kept verbatim).
+    const judge = result.bindings["coding-judge"];
+    assertLib.ok(judge, "coding-judge binding missing (rewrite target of coding-reviewer)");
+    assertLib.deepEqual(judge.channels, ["official", "relay-default"]);
 });
 
 test("dumpBindings: malformed YAML returns loadError, no throw", () => {

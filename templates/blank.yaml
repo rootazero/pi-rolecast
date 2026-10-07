@@ -1,3 +1,17 @@
+# Empty pre-fill. Use when no language-specific defaults apply.
+#
+# v0.6.0: bindings use the new active role names. The legacy aliases
+# (coding-implementer / coding-reviewer / coding-docs / coding-orchestrator)
+# are rewritten automatically by LEGACY_ROLE_ALIASES with a DEPRECATED or
+# REMOVED warning, so older profiles keep loading without edits. New
+# profiles should use the names below.
+#
+# Pick the bindings you actually want. The audit triad (countersign /
+# notary / secretariat) is OPT-IN — keep it commented out unless you want
+# strict two-pair-of-eyes governance. The fixer is the finalization phase
+# of a coder dispatch (ADR-0034); bind it if you want a hard gate between
+# apply and merge.
+
 framework_version: 0.2.0
 name: my-project
 description: |
@@ -9,5 +23,23 @@ workflow:
   role_groups: []
 
 gates: {}
+
+# Optional active roles (uncomment what you want):
+#   coding-architect: {alias: opus-thinking-medium, channels: [official]}
+#   coding-planner:   {alias: deepseek-verifiable,  channels: [official]}
+#   coding-coder:     {alias: deepseek-verifiable,  channels: [official]}
+#   coding-tester:    {alias: deepseek-verifiable,  channels: [official]}
+#   coding-judge:     {alias: gpt-judgment-high,    channels: [official, relay-default]}
+#   coding-mapper:    {alias: deepseek-verifiable,  channels: [official]}
+#   coding-profiler:  {alias: deepseek-verifiable,  channels: [official]}
+#   coding-auditor:   {alias: opus-thinking-high,   channels: [official]}
+#   coding-canary:    {alias: minimax-fast,         channels: [official]}
+#   coding-diarist:   {alias: minimax-medium,       channels: [official]}
+#
+# Optional audit triad + fixer (uncomment to opt in):
+#   coding-countersign: {alias: opus-thinking-high,   channels: [official]}
+#   coding-notary:      {alias: deepseek-verifiable,  channels: [official]}
+#   coding-secretariat: {alias: minimax-medium,       channels: [official]}
+#   coding-fixer:       {alias: deepseek-verifiable,  channels: [official]}
 
 bindings: {}
