@@ -2,6 +2,41 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] — 2026-10-08
+
+### ⚠ BREAKING CHANGES
+
+- **`role-packs/coding/coding-countersign.md` renamed → `coding-objector.md`.** The existing role was always the judge adversary (refutes `coding-judge` verdicts); the new name accurately describes the behavior and frees the ak-faithful name `coding-countersign` for pre-work approval. Per v0.8.0's "hard-fail on legacy names" stance, no `LEGACY_ROLE_ALIASES` shim is added — profiles referencing `coding-countersign` must update their binding to `coding-objector`.
+
+### Added (ak-semantics alignment)
+
+- **`role-packs/coding/coding-countersign.md`** — ak-faithful pre-work approval (给事中). Reads the ticket/plan BEFORE work begins; applies the 5-step audit (`establish_law`, `verify_owner_intent`, `find_conflicts`, `find_missing`, `find_unauthorized_scope`); emits `converged` / `continue` / `escalate`. Tier: strong (opus-thinking-medium). Souls: audit-law + countersign-law. Tools: read-only.
+- **`role-packs/coding/coding-inspector.md`** — ak-faithful post-impl code quality gate (台院). Runs after `coding-coder.apply`, before merge. Inspects correctness / complexity / test-quality / test-duration. Three-state output. Tier: strong (opus-thinking-high). Souls: audit-law + inspector-law + quality-law.
+- **`role-packs/coding/coding-doctor.md`** — ak-faithful factory health diagnostic (太医署). Diagnoses build / lint / dependency / complexity-drift / security-smells. NOT a verdict seat — issues diagnosis prose + health verdict (`healthy` / `needs-care` / `critical`). Tier: balanced (deepseek-verifiable). Souls: audit-law + doctor-law.
+- **`souls/countersign-law.md`**, **`souls/inspector-law.md`**, **`souls/doctor-law.md`**, **`souls/quality-law.md`** — ported from `ak-pi-workflow-roles`; Tang/Song court ceremony stripped, English project terms retained, structures preserved (5-step audit + 5-question rubric for countersign; 4-dimension gate for inspector; delete-first stance for doctor; complexity + test budgets for quality).
+- **`souls_extra` frontmatter (`src/profile_loader.ts` + `src/sync_settings.ts`)** — new optional `souls_extra: [string, ...]` field for multi-law inheritance. Roles can declare additional soul paths that are prepended after the primary `soul:` and before the role body. Generic law first; role body last. No existing role uses `souls_extra` besides the three new ones.
+- **`--dry-run` validates soul paths** (`src/sync_settings.ts`) — dry-run mode walks the soul-preload code path so missing-soul warnings surface without writing anything. A new test (`tests/unit/test_sync_settings.ts`) asserts dry-run emits the same warning a real run would.
+
+### Changed
+
+- **`coding-diarist` tier upgrade: cheap → balanced.** `model_recommendation: minimax-medium → deepseek-verifiable`; `thinking: medium → high`; `requires.reasoning_tier: low → medium`. Reasoning needs (cross-session decision coherence, citation discipline) justify the upgrade. **Cost note**: profiles that bind `coding-diarist` pay more per call; opt out by binding the old alias explicitly.
+- **`coding-diarist` description + body tightened to ak-faithful recorder scope.** Output stays 2-state (`completed` / `escalate`). Dropped the README / frontend-copy / visual-assets framing (that was docs work leaking into the role). Trigger phrases changed to `record decisions`, `diarize this`, `decision log`, `起居录`. New `soul: ../../souls/audit-law.md` so the role inherits the audit-law "cite, do not opine" stance.
+- **`.pi/rolecast.yaml`** — 4 new bindings (`coding-countersign`, `coding-inspector`, `coding-doctor`, `coding-diarist` with new alias). Renamed `coding-countersign` binding → `coding-objector` (with `gpt-judgment-high` alias + `relay-default` channel, matching the prior judge's profile shape).
+- **`references/role-authoring.md`** — tier table expanded from 11 to 17 rows. New "Three-state output for judgment roles" section documents the ak-faithful converged/continue/escalate contract.
+
+### Fixed
+
+- **Soul-path bug** in 6 roles (`coding-coder`, `coding-countersign`→`coding-objector`, `coding-fixer`, `coding-judge`, `coding-notary`, `coding-secretariat`). Frontmatter `soul: souls/audit-law.md` resolved via `path.resolve(path.dirname(roleFilePath), soulPath)` to `role-packs/coding/souls/audit-law.md` — a non-existent path. `sync_settings` emitted a warning and silently did NOT preload the audit-law soul. Now corrected to `soul: ../../souls/audit-law.md`, which resolves to the repo-root `souls/audit-law.md`. Two `..` segments are required (climb out of both `role-packs/` and `coding/`).
+- **ESM `__dirname` blocker** (`src/sync_settings.ts:559`) — the CLI wrapper used `__dirname` while `package.json` declares `"type": "module"`. `npx tsx src/sync_settings.ts sync` errored with `__dirname is not defined` before any sync work. Replaced with the standard ESM pattern `path.dirname(fileURLToPath(import.meta.url))`.
+
+### Migration
+
+- **`coding-countersign` → `coding-objector`** rename is breaking. Update profile bindings. Per v0.8.0, no `LEGACY_ROLE_ALIASES` shim is added.
+- **`coding-diarist` tier upgrade** is automatic for default-profile users (binding alias updated in `.pi/rolecast.yaml`). Users with custom bindings retain their explicit alias and are unaffected by the upgrade unless they bind via the profile default.
+- **New roles** are additive. Profiles that don't reference them are unaffected.
+- **Soul-path fix** is silent — the path now resolves to the file that was intended; no migration step needed for users.
+- **Run `npx tsx src/sync_settings.ts sync`** after upgrading to re-render your project-local `.pi/agents/*.md` so the new `soul:` paths are prepended (was a no-op before because of the soul-path bug; now functional).
+
 ## [0.8.0] — 2026-10-09
 
 ### ⚠ BREAKING CHANGES
