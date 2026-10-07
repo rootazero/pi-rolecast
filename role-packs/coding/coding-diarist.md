@@ -15,6 +15,14 @@ requires:
 # Write tools needed; bash excluded — diarist does not run commands.
 allowed_tools: [read, write, edit, grep, find, ls]
 soul: ../../souls/audit-law.md
+# Audit-triad seatbelt — bash is not in allowed_tools above, but declare the
+# canonical four forbidden patterns for consistency with the audit-triad
+# (coder, countersign, fixer, inspector, judge, notary, objector, doctor).
+forbidden_bash_patterns:
+  - "rm -rf"
+  - "git reset --hard"
+  - "git clean"
+  - "git checkout --"
 ---
 
 # Diarist
@@ -60,4 +68,4 @@ instead. This role records decisions with citations; it does not author prose.
 
 ## Output category
 
-Generation. Quality-driven, not machine-checkable.
+Recording. Cites sources; flags uncertainty.
