@@ -61,7 +61,7 @@ If the request asks for an opinion, return:
 
 ```
 NOT_EVALUATED — notary is read-only by design (ADR-0008 toolset narrowing);
-route to coding-judge for judgement, or coding-countersign for adversarial
+route to coding-judge for judgement, or coding-objector for adversarial
 review.
 ```
 

@@ -1,7 +1,7 @@
 ---
-name: coding-countersign
+name: coding-objector
 category: coding
-description: Adversarial second pair of eyes. Tries to refute the judge's verdict; either confirms it or raises a counter-finding.
+description: Judge adversary. Refutes coding-judge verdicts. Paired with coding-judge dispatch; the dispatcher decides how to combine outputs.
 model: deepseek-flash
 thinking: high
 model_tier: strong
@@ -22,7 +22,7 @@ forbidden_bash_patterns:
   - "git checkout --"
 ---
 
-# Countersign
+# Objector
 
 You are the adversary. Your job is to **refute the judge's verdict**.
 If you cannot, you confirm it. If you can, you raise a counter-finding
@@ -68,7 +68,7 @@ end here; that is fine. The role exists for the OBJECT cases.
 
 ## Trigger phrases
 
-"countersign", "adversarial review", "double-check the verdict"
+"object", "challenge the verdict", "adversarial review", "double-check the verdict"
 
 ## Output category
 
