@@ -29,6 +29,8 @@ import {
     writeSettings,
 } from "../../src/sync_settings.js";
 
+import { discoverRolePacks } from "../../src/profile_loader.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
@@ -315,6 +317,233 @@ test("writeAgents: dry-run emits missing-soul warning without writing", () => {
         assertLib.equal(result.written, 0);
         // (c) agentsDir was never created, no .md was emitted
         assertLib.equal(fs.existsSync(agentsDir), false);
+    } finally {
+        cleanup(tmp);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// v0.9.0 (A4) — souls_extra frontmatter
+// ─────────────────────────────────────────────────────────────────────
+
+test("discoverRolePacks: parses souls_extra from frontmatter", () => {
+    // Set up a tmp framework root with a role-pack that declares both
+    // `soul:` (primary) and `souls_extra:` (additional). After
+    // discovery, the role's `souls_extra` field MUST equal the declared
+    // list, in order. Missing/non-array → [].
+    const tmp = makeTempDir();
+    try {
+        const codingDir = path.join(tmp, "role-packs", "coding");
+        fs.mkdirSync(codingDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(codingDir, "coding-extra-soul.md"),
+            [
+                "---",
+                "name: coding-extra-soul",
+                "soul: ../../souls/primary-law.md",
+                "souls_extra:",
+                "  - ../../souls/secondary-law.md",
+                "  - ../../souls/tertiary-law.md",
+                "---",
+                "",
+                "# body",
+            ].join("\n"),
+        );
+
+        const packs = discoverRolePacks(tmp);
+        const coding = packs["coding"]!;
+        const role = coding.find((r) => r.full_name === "coding-extra-soul");
+        assertLib.ok(role !== undefined, "role must be discoverable");
+        assertLib.deepEqual(role!.souls_extra, [
+            "../../souls/secondary-law.md",
+            "../../souls/tertiary-law.md",
+        ]);
+        assertLib.equal(role!.soul_path, "../../souls/primary-law.md");
+    } finally {
+        cleanup(tmp);
+    }
+});
+
+test("discoverRolePacks: missing souls_extra defaults to empty array", () => {
+    // Backward-compat: roles that pre-date v0.9.0 do NOT declare
+    // souls_extra at all; the field MUST default to [] (not undefined)
+    // so sync_role_file can iterate without a guard.
+    const tmp = makeTempDir();
+    try {
+        const codingDir = path.join(tmp, "role-packs", "coding");
+        fs.mkdirSync(codingDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(codingDir, "coding-no-extra.md"),
+            [
+                "---",
+                "name: coding-no-extra",
+                "soul: ../../souls/primary-law.md",
+                "---",
+                "",
+                "# body",
+            ].join("\n"),
+        );
+
+        const packs = discoverRolePacks(tmp);
+        const role = packs["coding"]!.find((r) => r.full_name === "coding-no-extra")!;
+        assertLib.deepEqual(role.souls_extra, []);
+    } finally {
+        cleanup(tmp);
+    }
+});
+
+test("writeAgents: primary soul prepended before souls_extra entries", () => {
+    // v0.9.0 (A4) order matters: the most generic law MUST come first
+    // because the role's interpretation of a specific law depends on
+    // the generic constraints being established. Set up a role with
+    // soul=primary (audit-law style) and souls_extra=[secondary,
+    // tertiary]; assert that PRIMARY content appears BEFORE SECONDARY
+    // BEFORE TERTIARY BEFORE the role body in the generated agent
+    // file.
+    const tmp = makeTempDir();
+    try {
+        // souls/ sits at the tmp root so ../../souls/<name>.md resolves
+        // correctly from role-packs/coding/<role>.md.
+            const soulsDir = path.join(tmp, "souls");
+            fs.mkdirSync(soulsDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(soulsDir, "primary-law.md"),
+                "## Primary Law\n\nGENERIC-LAW-MARKER-AAA\n",
+            );
+            fs.writeFileSync(
+                path.join(soulsDir, "secondary-law.md"),
+                "## Secondary Law\n\nROLE-SPECIFIC-MARKER-BBB\n",
+            );
+            fs.writeFileSync(
+                path.join(soulsDir, "tertiary-law.md"),
+                "## Tertiary Law\n\nEXTRA-MARKER-CCC\n",
+            );
+
+        const codingDir = path.join(tmp, "role-packs", "coding");
+        fs.mkdirSync(codingDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(codingDir, "coding-multi-law.md"),
+            [
+                "---",
+                "name: coding-multi-law",
+                "soul: ../../souls/primary-law.md",
+                "souls_extra:",
+                "  - ../../souls/secondary-law.md",
+                "  - ../../souls/tertiary-law.md",
+                "---",
+                "",
+                "# Role Body",
+                "",
+                "ROLE-BODY-MARKER-ZZZ",
+            ].join("\n"),
+        );
+
+        const agentsDir = path.join(tmp, "agents");
+        writeAgents({
+            agentsDir,
+            frameworkRoot: tmp,
+            enabledGroups: ["coding"],
+            overrides: {
+                "coding-multi-law": { model: "deepseek-v4.1-flash", channel: "official" },
+            },
+            dryRun: false,
+            registry: tryLoadRegistry(FRAMEWORK_ROOT),
+        });
+
+        const out = fs.readFileSync(path.join(agentsDir, "coding-multi-law.md"), "utf8");
+        const idxPrimary   = out.indexOf("GENERIC-LAW-MARKER-AAA");
+        const idxSecondary = out.indexOf("ROLE-SPECIFIC-MARKER-BBB");
+        const idxTertiary  = out.indexOf("EXTRA-MARKER-CCC");
+        const idxBody      = out.indexOf("ROLE-BODY-MARKER-ZZZ");
+
+        // All four markers must be present.
+        assertLib.ok(idxPrimary >= 0, "primary soul content must be present");
+        assertLib.ok(idxSecondary >= 0, "secondary soul content must be present");
+        assertLib.ok(idxTertiary >= 0, "tertiary soul content must be present");
+        assertLib.ok(idxBody >= 0, "role body must be present");
+
+        // Order: primary < secondary < tertiary < body.
+        assertLib.ok(
+            idxPrimary < idxSecondary,
+            `primary (${idxPrimary}) must precede secondary (${idxSecondary})`,
+        );
+        assertLib.ok(
+            idxSecondary < idxTertiary,
+            `secondary (${idxSecondary}) must precede tertiary (${idxTertiary})`,
+        );
+        assertLib.ok(
+            idxTertiary < idxBody,
+            `tertiary (${idxTertiary}) must precede role body (${idxBody})`,
+        );
+    } finally {
+        cleanup(tmp);
+    }
+});
+
+test("writeAgents: missing souls_extra entry emits warning, does not throw", () => {
+    // Mirror the T1.5 dry-run test for the primary `soul:` path, but
+    // for the souls_extra list. A bad entry must surface a warning,
+    // other valid entries must still be prepended, and the role must
+    // still be written.
+    const tmp = makeTempDir();
+    try {
+        const soulsDir = path.join(tmp, "souls");
+        fs.mkdirSync(soulsDir, { recursive: true });
+        fs.writeFileSync(path.join(soulsDir, "primary-law.md"), "## Primary\n\nOK-MARKER\n");
+        // Intentionally do NOT create secondary-law.md.
+
+        const codingDir = path.join(tmp, "role-packs", "coding");
+        fs.mkdirSync(codingDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(codingDir, "coding-broken-extra.md"),
+            [
+                "---",
+                "name: coding-broken-extra",
+                "soul: ../../souls/primary-law.md",
+                "souls_extra:",
+                "  - ../../souls/secondary-law.md",
+                "---",
+                "",
+                "# body",
+            ].join("\n"),
+        );
+
+        const agentsDir = path.join(tmp, "agents");
+
+        const origWrite = process.stderr.write.bind(process.stderr);
+        let captured = "";
+        (process.stderr as { write: typeof process.stderr.write }).write = ((
+            chunk: string | Uint8Array,
+            ...rest: unknown[]
+        ) => {
+            captured += typeof chunk === "string" ? chunk : chunk.toString();
+            return origWrite(chunk as string, ...(rest as []));
+        }) as typeof process.stderr.write;
+
+        let result: ReturnType<typeof writeAgents>;
+        try {
+            result = writeAgents({
+                agentsDir,
+                frameworkRoot: tmp,
+                enabledGroups: ["coding"],
+                overrides: {
+                    "coding-broken-extra": { model: "deepseek-v4.1-flash", channel: "official" },
+                },
+                dryRun: false,
+                registry: tryLoadRegistry(FRAMEWORK_ROOT),
+            });
+        } finally {
+            (process.stderr as { write: typeof process.stderr.write }).write = origWrite;
+        }
+
+        assertLib.match(
+            captured,
+            /warning: role 'coding-broken-extra' declares souls_extra '..\/..\/souls\/secondary-law\.md' but the file is missing/,
+        );
+        assertLib.equal(result.written, 1);
+        // The role must still be written; primary soul content present.
+        const out = fs.readFileSync(path.join(agentsDir, "coding-broken-extra.md"), "utf8");
+        assertLib.match(out, /OK-MARKER/);
     } finally {
         cleanup(tmp);
     }

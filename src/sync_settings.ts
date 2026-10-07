@@ -274,6 +274,30 @@ export function prependSoul(body: string, soul: string): string {
 }
 
 /**
+ * v0.9.0 (A4): Add additional soul content into an EXISTING soul
+ * wrapper (created by a previous `prependSoul` call). The new content
+ * is spliced right BEFORE the existing closing marker, preserving the
+ * "generic law first" order required by ADR-0005.
+ *
+ * Why a separate helper instead of calling `prependSoul` again:
+ * `prependSoul` always splices right after the frontmatter, so calling
+ * it repeatedly would push the previous soul block AFTER the new one,
+ * ending with the most-recently-added soul first — the exact opposite of
+ * what multi-law inheritance needs.
+ *
+ * If no existing soul wrapper is present, falls back to `prependSoul`
+ * semantics (insert right after frontmatter) so the helper is safe to
+ * call unconditionally on any role body.
+ */
+export function appendSoulContent(body: string, soul: string): string {
+    const closing = "<!-- ▲ end soul -->";
+    if (body.includes(closing)) {
+        return body.replace(closing, soul.trimEnd() + "\n" + closing);
+    }
+    return prependSoul(body, soul);
+}
+
+/**
  * v0.6.0 (A2): If the role declares `allowed_tools`, append a Tool
  * restrictions block listing exactly those tools. Per ADR-0008, this is
  * documentation — the framework does NOT enforce the restriction at
@@ -357,9 +381,27 @@ export function writeAgents(opts: {
         // resolution.
         const soulPrepend = loadSoulPrepend(rd, src);
         const withSoul = soulPrepend === null ? rawBody : prependSoul(rawBody, soulPrepend);
+        // v0.9.0 (A4): if the role declares souls_extra, load and prepend
+        // each after the primary soul. Generic law comes first; role body
+        // last. A missing file emits a warning but does NOT throw — same
+        // posture as loadSoulPrepend for the primary `soul:` path.
+        // Uses `appendSoulContent` (not `prependSoul`) so each extra is
+        // spliced INTO the existing soul wrapper in front of the closing
+        // marker, preserving declaration order.
+        let withExtras = withSoul;
+        for (const extra of rd.souls_extra ?? []) {
+            const abs = path.resolve(path.dirname(src), extra);
+            if (fs.existsSync(abs)) {
+                withExtras = appendSoulContent(withExtras, fs.readFileSync(abs, "utf8"));
+            } else {
+                process.stderr.write(
+                    `warning: role '${rd.full_name}' declares souls_extra '${extra}' but the file is missing at ${abs}\n`,
+                );
+            }
+        }
         // v0.6.0 (A2): if the role declares allowed_tools, append a
         // Tool-restrictions block after the role body.
-        const withTools = appendToolRestrictions(withSoul, rd.allowed_tools);
+        const withTools = appendToolRestrictions(withExtras, rd.allowed_tools);
         // v0.6.0 (A5): if the role declares forbidden_bash_patterns, append
         // a Bash-seatbelt block (literal substrings per ADR-0008).
         const withSeatbelt = appendBashSeatbelt(withTools, rd.forbidden_bash_patterns);

@@ -149,6 +149,14 @@ export interface RoleDef {
     // does NOT enforce (seatbelt is 防呆不防坏). When empty/absent, no block
     // is written.
     forbidden_bash_patterns: string[];
+    // v0.9.0 (A4): additional soul paths prepended after the primary
+    // `soul:` and before the role body. Lets a role inherit from
+    // multiple shared laws (e.g. coding-inspector inherits audit-law
+    // + inspector-law + quality-law). Order matters: the most generic
+    // law must come first because the role's interpretation of a
+    // specific law depends on the generic constraints being
+    // established.
+    souls_extra: string[];
 }
 
 export interface Model {
@@ -286,6 +294,12 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
             const forbiddenBashPatterns: string[] = Array.isArray(fbpRaw)
                 ? fbpRaw.filter((x): x is string => typeof x === "string")
                 : [];
+            // v0.9.0 (A4): souls_extra. Optional list of additional soul
+            // paths. Filtered to strings only; empty/missing → [].
+            const seRaw = fm["souls_extra"];
+            const soulsExtra: string[] = Array.isArray(seRaw)
+                ? seRaw.filter((x): x is string => typeof x === "string")
+                : [];
             roles.push({
                 full_name: fullName,
                 group,
@@ -298,6 +312,7 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
                 allowed_tools: allowedTools,
                 soul_path: soulPath,
                 forbidden_bash_patterns: forbiddenBashPatterns,
+                souls_extra: soulsExtra,
             });
         }
         if (roles.length > 0) {
