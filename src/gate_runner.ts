@@ -326,6 +326,7 @@ function runCommands(
         let combinedErr = "";
         let aborted = false;
         let currentChild: ReturnType<typeof exec> | null = null;
+        let resolved = false;
 
         const abortHandler = () => {
             aborted = true;
@@ -337,6 +338,22 @@ function runCommands(
         };
         signal?.addEventListener("abort", abortHandler, { once: true });
 
+        // All resolve paths funnel through here so the write stream is
+        // fully closed before the promise resolves. Resolving while
+        // `stream.end()` is still flushing lets the test runner tear down
+        // the tempdir mid-flush, surfacing as "asynchronous activity after
+        // the test ended" with ENOENT on the log file.
+        const finishAndResolve = (result: RunCommandsResult): void => {
+            if (resolved) return;
+            resolved = true;
+            signal?.removeEventListener("abort", abortHandler);
+            if (stream.writableEnded) {
+                resolve(result);
+            } else {
+                stream.end(() => resolve(result));
+            }
+        };
+
         // Non-destructive iteration: each retry of a failing phase must run
         // every command — not just the ones after the previously-shifted index.
         // (Phase `commands` are reused across attempts.)
@@ -344,14 +361,11 @@ function runCommands(
 
         const runNext = async (): Promise<void> => {
             if (aborted) {
-                cleanup();
-                resolve({ rc: 130, stdout: combinedOut, stderr: combinedErr + "\naborted" });
+                finishAndResolve({ rc: 130, stdout: combinedOut, stderr: combinedErr + "\naborted" });
                 return;
             }
             if (index >= commands.length) {
-                cleanup();
-                stream.end();
-                resolve({ rc: 0, stdout: combinedOut, stderr: combinedErr });
+                finishAndResolve({ rc: 0, stdout: combinedOut, stderr: combinedErr });
                 return;
             }
             const cmd = commands[index++]!;
@@ -376,40 +390,28 @@ function runCommands(
                 cp.on("close", (code: number | null) => {
                     currentChild = null;
                     if (aborted) {
-                        cleanup();
-                        stream.end();
-                        resolve({ rc: 130, stdout: combinedOut, stderr: combinedErr + "\naborted" });
+                        finishAndResolve({ rc: 130, stdout: combinedOut, stderr: combinedErr + "\naborted" });
                         return;
                     }
                     combinedOut += Buffer.concat(stdoutChunks).toString("utf8");
                     combinedErr += Buffer.concat(stderrChunks).toString("utf8");
                     if (code !== 0) {
-                        cleanup();
-                        stream.end();
-                        resolve({ rc: code ?? 1, stdout: combinedOut, stderr: combinedErr });
+                        finishAndResolve({ rc: code ?? 1, stdout: combinedOut, stderr: combinedErr });
                         return;
                     }
                     void runNext();
                 });
                 cp.on("error", (err: Error) => {
                     currentChild = null;
-                    cleanup();
-                    stream.end();
                     combinedErr += `\nexec error: ${err.message}`;
-                    resolve({ rc: 1, stdout: combinedOut, stderr: combinedErr });
+                    finishAndResolve({ rc: 1, stdout: combinedOut, stderr: combinedErr });
                 });
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 combinedErr += `\nexec threw: ${msg}`;
-                cleanup();
-                stream.end();
-                resolve({ rc: 1, stdout: combinedOut, stderr: combinedErr });
+                finishAndResolve({ rc: 1, stdout: combinedOut, stderr: combinedErr });
             }
         };
-
-        function cleanup(): void {
-            signal?.removeEventListener("abort", abortHandler);
-        }
 
         void runNext();
     });
