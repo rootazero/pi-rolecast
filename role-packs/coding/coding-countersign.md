@@ -14,7 +14,7 @@ requires:
 # A2 — allowed_tools (per ADR-0008 toolset narrowing)
 # Read-only by default; bash allowed for ad-hoc inspection but seatbelt-blocked.
 allowed_tools: [read, grep, find, ls, bash]
-soul: souls/audit-law.md
+soul: ../../souls/audit-law.md
 forbidden_bash_patterns:
   - "rm -rf"
   - "git reset --hard"

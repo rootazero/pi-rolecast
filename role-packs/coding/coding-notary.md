@@ -14,7 +14,7 @@ requires:
 # A2 — allowed_tools (per ADR-0008 toolset narrowing)
 # Strictly read-only; no bash needed — bash is excluded intentionally.
 allowed_tools: [read, grep, find, ls]
-soul: souls/audit-law.md
+soul: ../../souls/audit-law.md
 forbidden_bash_patterns:
   - "rm -rf"
   - "git reset --hard"

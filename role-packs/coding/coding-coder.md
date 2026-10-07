@@ -17,7 +17,7 @@ preferences:
 # A2 — allowed_tools (per ADR-0008 toolset narrowing)
 # Full toolset — coder is the executor. Bash allowed; seatbelt applies (A5).
 allowed_tools: [read, write, edit, bash, grep, find, ls]
-soul: souls/audit-law.md
+soul: ../../souls/audit-law.md
 forbidden_bash_patterns:
   - "rm -rf"
   - "git reset --hard"

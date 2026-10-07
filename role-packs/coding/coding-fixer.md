@@ -15,7 +15,7 @@ requires:
 # Full toolset. This is the bash seatbelt role — bash is allowed but
 # forbidden_bash_patterns is the canonical four (ADR-0008).
 allowed_tools: [read, write, edit, bash, grep, find, ls]
-soul: souls/audit-law.md
+soul: ../../souls/audit-law.md
 forbidden_bash_patterns:
   - "rm -rf"
   - "git reset --hard"

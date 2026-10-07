@@ -15,7 +15,7 @@ requires:
 # Read + write so the secretariat can append to the audit log; bash is for
 # the audit-log rotation command only (e.g. truncate / rotate).
 allowed_tools: [read, write, edit, bash]
-soul: souls/audit-law.md
+soul: ../../souls/audit-law.md
 forbidden_bash_patterns:
   - "rm -rf"
   - "git reset --hard"
