@@ -2,6 +2,10 @@
 # framework is installed in a user's project tree).
 .pi/
 agent-workflow-logs/
+# Re-include the project's own profile so contributors can commit changes
+# without `-f`. Framework reads this on session_start; ignoring it would
+# force every profile edit onto a stash-then-push dance.
+!.pi/rolecast.yaml
 # Re-include rolecast.yaml fixtures used by Node + Python integration tests.
 # The tests/fixtures tree is the only place project-shaped .pi/ dirs belong
 # in version control.

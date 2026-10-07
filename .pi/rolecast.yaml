@@ -35,8 +35,8 @@ bindings:
     alias: opus-thinking-high
     channels:
       - official
-  # NOTE: coding-objector binding follows below (renamed from coding-countersign
-  # per T4; this profile never bound the old name, so this is a fresh binding).
+  # NOTE: coding-objector binding follows below — fresh binding, see plan T9
+  # Step 3 correction note (no legacy name was ever bound in this profile).
   coding-planner:
     alias: deepseek-verifiable
     channels:
