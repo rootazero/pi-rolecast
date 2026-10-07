@@ -20,6 +20,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
     availableRoles,
@@ -556,7 +557,7 @@ export async function main(argv: string[]): Promise<number> {
     const opts = parseCliFlags(args);
 
     if (opts.frameworkRoot === undefined) {
-        opts.frameworkRoot = path.resolve(__dirname, "..");
+        opts.frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     }
 
     if (opts.listGroups === true) {
