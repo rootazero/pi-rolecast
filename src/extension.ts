@@ -70,7 +70,6 @@ import {
 	DEFAULT_SETTINGS_PATH as SYNC_DEFAULT_SETTINGS_PATH,
 	type SyncResult,
 } from "./sync_settings.js";
-import { LEGACY_ROLE_REDIRECTS } from "./profile_loader.js";
 
 const execFileP = promisify(execFile);
 
@@ -881,16 +880,26 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 			// table here too — the bindings cache only holds the new names.
 			const payload = bindingsCache.bindings[subagentType];
 			if (!payload) {
-				if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, subagentType)) {
-					const target = LEGACY_ROLE_REDIRECTS[subagentType];
-					const reason = target === null
-						? `pi-rolecast: role '${subagentType}' was REMOVED in v0.6.0. `
-						  + `Callers should dispatch via the Agent tool directly. `
-						  + `See references/v0.6.0-optimization-roadmap.md.`
-						: `pi-rolecast: role '${subagentType}' was renamed to '${target}' `
-						  + `in v0.6.0. Update your .pi/rolecast.yaml bindings to use `
-						  + `the new name. See references/v0.6.0-optimization-roadmap.md.`;
-					return { block: true, reason, terminate: true };
+				// v0.8.0: LEGACY_ROLE_REDIRECTS was removed. The four legacy
+				// v0.6.0-era role names are checked here directly so a stray
+				// @coding-implementer at-handle or explicit subagent_type
+				// surfaces the same migration hint at dispatch time that
+				// `parseBindings` surfaces at profile load.
+				if (subagentType === "coding-implementer"
+					|| subagentType === "coding-reviewer"
+					|| subagentType === "coding-docs"
+					|| subagentType === "coding-orchestrator") {
+					return {
+						block: true,
+						reason: `pi-rolecast: role '${subagentType}' was REMOVED in v0.8.0. `
+							+ `The v0.6.0-era role-pack files (coding-implementer, `
+							+ `coding-reviewer, coding-docs, coding-orchestrator) `
+							+ `have been hard-deleted. Update your .pi/rolecast.yaml `
+							+ `to use the v0.6.0 successor names (coding-coder, `
+							+ `coding-judge, coding-diarist) or omit the binding entirely `
+							+ `for coding-orchestrator. See references/v0.6.0-optimization-roadmap.md.`,
+						terminate: true,
+					};
 				}
 				return;
 			}

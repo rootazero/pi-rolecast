@@ -591,26 +591,11 @@ testApi("DEFAULT_FRAMEWORK_VERSION is 0.2.0", () => {
     assert.equal(DEFAULT_FRAMEWORK_VERSION, "0.2.0");
 });
 // ─────────────────────────────────────────────────────────────────────
-// v0.7.0 — LEGACY_ROLE_ALIASES removed; legacy names hard-error with
-// migration hints via LEGACY_ROLE_REDIRECTS.
+// v0.8.0 ── LEGACY_ROLE_REDIRECTS table removed; legacy names hard-error
+// with a single v0.8.0 message that names all three successor roles.
 // ─────────────────────────────────────────────────────────────────────
 
-import { LEGACY_ROLE_REDIRECTS } from "../../src/profile_loader.js";
-
-testApi("v0.7.0: LEGACY_ROLE_REDIRECTS exposes the four legacy names", () => {
-    assert.ok("coding-reviewer" in LEGACY_ROLE_REDIRECTS);
-    assert.ok("coding-implementer" in LEGACY_ROLE_REDIRECTS);
-    assert.ok("coding-docs" in LEGACY_ROLE_REDIRECTS);
-    assert.ok("coding-orchestrator" in LEGACY_ROLE_REDIRECTS);
-    // coding-orchestrator is fully removed (null target).
-    assert.equal(LEGACY_ROLE_REDIRECTS["coding-orchestrator"], null);
-    // The other three map to a single new role each.
-    assert.equal(LEGACY_ROLE_REDIRECTS["coding-reviewer"], "coding-judge");
-    assert.equal(LEGACY_ROLE_REDIRECTS["coding-implementer"], "coding-coder");
-    assert.equal(LEGACY_ROLE_REDIRECTS["coding-docs"], "coding-diarist");
-});
-
-testApi("v0.7.0: legacy binding for coding-implementer fails with rename hint", () => {
+testApi("v0.8.0: legacy binding for coding-implementer fails with REMOVED hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
@@ -630,11 +615,12 @@ testApi("v0.7.0: legacy binding for coding-implementer fails with rename hint", 
     }
     assert.ok(err, "expected ProfileError to be thrown");
     assert.match(err!.message, /coding-implementer/);
-    assert.match(err!.message, /renamed to 'coding-coder'/);
+    assert.match(err!.message, /REMOVED in v0.8.0/);
+    assert.match(err!.message, /coding-coder/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-testApi("v0.7.0: legacy binding for coding-reviewer fails with rename hint", () => {
+testApi("v0.8.0: legacy binding for coding-reviewer fails with REMOVED hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
@@ -654,11 +640,12 @@ testApi("v0.7.0: legacy binding for coding-reviewer fails with rename hint", () 
     }
     assert.ok(err, "expected ProfileError to be thrown");
     assert.match(err!.message, /coding-reviewer/);
-    assert.match(err!.message, /renamed to 'coding-judge'/);
+    assert.match(err!.message, /REMOVED in v0.8.0/);
+    assert.match(err!.message, /coding-judge/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-testApi("v0.7.0: legacy binding for coding-docs fails with rename hint", () => {
+testApi("v0.8.0: legacy binding for coding-docs fails with REMOVED hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
@@ -678,11 +665,12 @@ testApi("v0.7.0: legacy binding for coding-docs fails with rename hint", () => {
     }
     assert.ok(err, "expected ProfileError to be thrown");
     assert.match(err!.message, /coding-docs/);
-    assert.match(err!.message, /renamed to 'coding-diarist'/);
+    assert.match(err!.message, /REMOVED in v0.8.0/);
+    assert.match(err!.message, /coding-diarist/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-testApi("v0.7.0: legacy binding for coding-orchestrator fails with REMOVED hint", () => {
+testApi("v0.8.0: legacy binding for coding-orchestrator fails with REMOVED hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
@@ -702,11 +690,11 @@ testApi("v0.7.0: legacy binding for coding-orchestrator fails with REMOVED hint"
     }
     assert.ok(err, "expected ProfileError to be thrown");
     assert.match(err!.message, /coding-orchestrator/);
-    assert.match(err!.message, /REMOVED/);
+    assert.match(err!.message, /REMOVED in v0.8.0/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-testApi("v0.7.0: legacy contracts declaration fails with migration hint", () => {
+testApi("v0.8.0: legacy contracts declaration fails with REMOVED hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
@@ -728,9 +716,20 @@ testApi("v0.7.0: legacy contracts declaration fails with migration hint", () => 
         err = e as Error;
     }
     assert.ok(err, "expected ProfileError to be thrown");
-    assert.match(err!.message, /coding-implementer/);
-    assert.match(err!.message, /renamed to 'coding-coder'/);
+    assert.match(err!.message, /contracts\.coding-implementer/);
+    assert.match(err!.message, /REMOVED in v0.8.0/);
     fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.8.0: LEGACY_ROLE_REDIRECTS is no longer exported", async () => {
+    let exported = true;
+    try {
+        const mod = await import("../../src/profile_loader.js");
+        if (!("LEGACY_ROLE_REDIRECTS" in mod)) exported = false;
+    } catch {
+        exported = false;
+    }
+    assert.equal(exported, false, "LEGACY_ROLE_REDIRECTS must be removed in v0.8.0");
 });
 
 testApi("v0.6.0: audit_max_resubmits default is null (unbounded, ADR-0007)", () => {

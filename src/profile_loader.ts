@@ -210,26 +210,6 @@ export interface Profile {
     resolved_bindings: Record<string, ResolvedBinding>;
 }
 
-/**
- * v0.6.0 → v0.7.0: legacy role-name redirect table.
- *
- * Used ONLY to produce a clear migration error when a profile still
- * declares a binding or contract under a v0.6.0-era role name. Profiles
- * that pre-date v0.6.0 used bare `implement`, `review`, `docs`, etc.;
- * profiles that dated to v0.6.0 used `coding-implementer`, `coding-reviewer`,
- * `coding-docs`, and `coding-orchestrator`. v0.7.0 removed the rewrite
- * shim so all four old names now produce a hard error pointing to the
- * new name (or to "removed entirely" for `coding-orchestrator`).
- *
- * `null` target = role is fully removed; no new name exists.
- */
-export const LEGACY_ROLE_REDIRECTS: Readonly<Record<string, string | null>> = Object.freeze({
-    "coding-reviewer":      "coding-judge",
-    "coding-implementer":  "coding-coder",
-    "coding-docs":          "coding-diarist",
-    "coding-orchestrator":  null,
-});
-
 // ─────────────────────────────────────────────────────────────────────
 // Frontmatter parsing
 // ─────────────────────────────────────────────────────────────────────
@@ -276,17 +256,6 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
             }
             const text = fs.readFileSync(mdPath, "utf8");
             const fm = parseFrontmatter(text);
-            // v0.7.0: skip role-pack files that declare `deprecated_redirect`
-            // in their frontmatter. The four legacy v0.6.0 roles
-            // (coding-implementer, coding-reviewer, coding-docs,
-            // coding-orchestrator) ship on disk for one release with
-            // `deprecated_redirect` set, then the file is removed in v0.8.x.
-            // Skipping here keeps the runtime `allowedRoles` clean so the
-            // migration hint path (LEGACY_ROLE_REDIRECTS) can fire when a
-            // profile still references the old name.
-            if ("deprecated_redirect" in fm) {
-                continue;
-            }
             const nameFromFm = typeof fm["name"] === "string"
                 ? (fm["name"] as string).trim() : "";
             const fullName = nameFromFm || `${group}-${role}`;
@@ -463,17 +432,15 @@ export function parseProfile(
     // also surface the legacy name through `validateAllContracts`, but
     // failing fast here gives a clearer trace.
     for (const roleName of Object.keys(contracts)) {
-        if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, roleName)) {
-            const target = LEGACY_ROLE_REDIRECTS[roleName];
-            if (target === null) {
-                throw new ProfileError(
-                    `contracts.${roleName}: REMOVED in v0.6.0. Callers should dispatch via the Agent tool directly. `
-                    + `Remove the '${roleName}' entry from your .pi/rolecast.yaml contracts.`,
-                );
-            }
+        if (roleName === "coding-implementer" || roleName === "coding-reviewer"
+            || roleName === "coding-docs" || roleName === "coding-orchestrator") {
             throw new ProfileError(
-                `contracts.${roleName}: renamed to '${target}' in v0.6.0. Update your .pi/rolecast.yaml `
-                + `contracts to use the new name. See references/v0.6.0-optimization-roadmap.md.`,
+                `contracts.${roleName}: REMOVED in v0.8.0. The v0.6.0-era role names `
+                + `(coding-implementer, coding-reviewer, coding-docs, coding-orchestrator) `
+                + `have been hard-deleted from the framework along with their role-pack files. `
+                + `Use the v0.6.0 successor names instead: coding-coder, coding-judge, `
+                + `coding-diarist, or omit the binding entirely for coding-orchestrator. `
+                + `See references/v0.6.0-optimization-roadmap.md.`,
             );
         }
     }
@@ -577,23 +544,18 @@ function parseBindings(
                 hint = (` (hint: '${role}' is a legacy coding role name; `
                         + `use 'coding-${role}' in v0.2.0+, and add `
                         + `\`workflow.role_groups: [coding]\` to your profile)`);
-            } else if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, role)) {
-                // v0.7.0: a profile still references a v0.6.0-era legacy
-                // name. The rewrite shim was removed; surface a hard error
-                // telling the user the new role to use (or "removed entirely"
-                // for coding-orchestrator). The runtime dispatcher
-                // (extension.ts) reuses the same table for the same purpose.
-                const target = LEGACY_ROLE_REDIRECTS[role];
-                if (target === null) {
-                    hint = (` (hint: '${role}' was REMOVED in v0.6.0. `
-                            + `Callers should dispatch via the Agent tool directly `
-                            + `instead of binding a dispatch surface for it. Remove `
-                            + `the '${role}' binding from your .pi/rolecast.yaml.)`);
-                } else {
-                    hint = (` (hint: '${role}' was renamed to '${target}' in v0.6.0. `
-                            + `Update your .pi/rolecast.yaml bindings to use the new `
-                            + `name. See references/v0.6.0-optimization-roadmap.md.)`);
-                }
+            } else if (role === "coding-implementer" || role === "coding-reviewer"
+                || role === "coding-docs" || role === "coding-orchestrator") {
+                // v0.8.0: the four legacy v0.6.0-era names are now hard-deleted
+                // from the framework. Profiles that still reference them fail
+                // here with a sharper v0.8.0 message; LEGACY_ROLE_REDIRECTS was
+                // removed in this release.
+                hint = (` (hint: '${role}' was REMOVED in v0.8.0. The v0.6.0-era `
+                        + `role-pack files for coding-implementer, coding-reviewer, `
+                        + `coding-docs, and coding-orchestrator have been hard-deleted. `
+                        + `Use the v0.6.0 successor names instead: coding-coder, `
+                        + `coding-judge, coding-diarist, or omit the binding entirely `
+                        + `for coding-orchestrator. See references/v0.6.0-optimization-roadmap.md.)`);
             }
             throw new ProfileError(
                 `bindings key '${role}' is not in any enabled role group `
@@ -632,9 +594,11 @@ function parseBindings(
 
 
 /**
- * v0.7.0: legacy role-name rewrite shim was removed. Profiles declaring
- * a v0.6.0-era binding name now fail loudly via `parseBindings` (which
- * consults LEGACY_ROLE_REDIRECTS to produce a migration hint).
+ * v0.8.0: legacy role-name rewrite shim and the LEGACY_ROLE_REDIRECTS
+ * lookup table are both removed. Profiles declaring a v0.6.0-era
+ * binding or contract name now fail loudly via `parseBindings` or
+ * `parseProfile` with a hard-coded error message that names the
+ * successor role (or "removed entirely" for coding-orchestrator).
  */
 
 
