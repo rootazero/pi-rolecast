@@ -192,14 +192,26 @@ testApi("discoverRolePacks finds coding group from real role-packs/", () => {
     assert.ok("coding" in packs, "coding group must be discoverable");
     const roles = packs["coding"]!;
     const names = roles.map((r) => r.full_name).sort();
-    // Spot-check: the 11 standard coding roles are present.
+    // v0.7.0: the four v0.6.0-era legacy roles
+    // (coding-implementer, coding-reviewer, coding-docs,
+    // coding-orchestrator) ship on disk for one release with
+    // `deprecated_redirect` in frontmatter and are skipped at
+    // discovery time. The active roster is the ten roles that were
+    // not renamed.
     for (const expected of [
-        "coding-architect", "coding-planner", "coding-implementer",
-        "coding-tester", "coding-reviewer", "coding-mapper",
+        "coding-architect", "coding-planner", "coding-coder",
+        "coding-tester", "coding-judge", "coding-mapper",
         "coding-profiler", "coding-auditor", "coding-canary",
-        "coding-docs", "coding-orchestrator",
+        "coding-diarist",
     ]) {
         assert.ok(names.includes(expected), `missing role: ${expected}`);
+    }
+    // Spot-check: the four legacy roles are NOT discoverable.
+    for (const legacy of [
+        "coding-implementer", "coding-reviewer",
+        "coding-docs", "coding-orchestrator",
+    ]) {
+        assert.ok(!names.includes(legacy), `legacy role should be skipped: ${legacy}`);
     }
 });
 
@@ -579,100 +591,147 @@ testApi("DEFAULT_FRAMEWORK_VERSION is 0.2.0", () => {
     assert.equal(DEFAULT_FRAMEWORK_VERSION, "0.2.0");
 });
 // ─────────────────────────────────────────────────────────────────────
-// v0.6.0 — Output contracts, audit_max_resubmits, legacy role rewrites
+// v0.7.0 — LEGACY_ROLE_ALIASES removed; legacy names hard-error with
+// migration hints via LEGACY_ROLE_REDIRECTS.
 // ─────────────────────────────────────────────────────────────────────
 
-import { LEGACY_ROLE_ALIASES } from "../../src/profile_loader.js";
+import { LEGACY_ROLE_REDIRECTS } from "../../src/profile_loader.js";
 
-testApi("v0.6.0: LEGACY_ROLE_ALIASES exposes the four documented legacy roles", () => {
-    assert.ok("coding-reviewer" in LEGACY_ROLE_ALIASES);
-    assert.ok("coding-implementer" in LEGACY_ROLE_ALIASES);
-    assert.ok("coding-docs" in LEGACY_ROLE_ALIASES);
-    assert.ok("coding-orchestrator" in LEGACY_ROLE_ALIASES);
+testApi("v0.7.0: LEGACY_ROLE_REDIRECTS exposes the four legacy names", () => {
+    assert.ok("coding-reviewer" in LEGACY_ROLE_REDIRECTS);
+    assert.ok("coding-implementer" in LEGACY_ROLE_REDIRECTS);
+    assert.ok("coding-docs" in LEGACY_ROLE_REDIRECTS);
+    assert.ok("coding-orchestrator" in LEGACY_ROLE_REDIRECTS);
     // coding-orchestrator is fully removed (null target).
-    assert.equal(LEGACY_ROLE_ALIASES["coding-orchestrator"], null);
+    assert.equal(LEGACY_ROLE_REDIRECTS["coding-orchestrator"], null);
     // The other three map to a single new role each.
-    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-reviewer"], ["coding-judge"]);
-    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-implementer"], ["coding-coder"]);
-    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-docs"], ["coding-diarist"]);
+    assert.equal(LEGACY_ROLE_REDIRECTS["coding-reviewer"], "coding-judge");
+    assert.equal(LEGACY_ROLE_REDIRECTS["coding-implementer"], "coding-coder");
+    assert.equal(LEGACY_ROLE_REDIRECTS["coding-docs"], "coding-diarist");
 });
 
-testApi("v0.6.0: legacy alias rewrite fires when target role exists in role-packs (B/C套 shipped)", () => {
-    // After B套 (audit triad) and C套 (worker split + diarist rename + orchestrator
-    // deprecation) shipped, the LEGACY_ROLE_ALIASES targets — coding-judge,
-    // coding-coder, coding-diarist — exist in role-packs/. The rewrite now
-    // fires end-to-end: old names are replaced with new names, deprecated
-    // warnings are emitted, and coding-orchestrator is dropped with REMOVED.
+testApi("v0.7.0: legacy binding for coding-implementer fails with rename hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
-        name: legacy-rewrite-test
-        description: rewrite fires when B/C套 targets ship
+        name: legacy-coding-implementer
+        description: legacy coding-implementer binding should error
         workflow:
           role_groups: [coding]
         bindings:
-          coding-reviewer:     {alias: gpt-judgment-high, channels: [official, relay-default]}
-          coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
-          coding-docs:         {alias: minimax-medium, channels: [official]}
-          coding-orchestrator: {alias: gpt-judgment-medium, channels: [official, relay-default]}
-          coding-architect:    {alias: opus-thinking-medium, channels: [official]}
-        escalation:
-          max_attempts: 2
+          coding-implementer: {alias: deepseek-verifiable, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
     `);
-    const profile = loadProfile(profilePath, PROJECT_ROOT);
-    // Rewrites happened — old keys replaced with new.
-    assert.ok(!("coding-reviewer" in profile.bindings), "coding-reviewer should have been rewritten");
-    assert.ok(!("coding-implementer" in profile.bindings), "coding-implementer should have been rewritten");
-    assert.ok(!("coding-docs" in profile.bindings), "coding-docs should have been rewritten");
-    assert.ok("coding-judge" in profile.bindings, "coding-judge missing after rewrite");
-    assert.ok("coding-coder" in profile.bindings, "coding-coder missing after rewrite");
-    assert.ok("coding-diarist" in profile.bindings, "coding-diarist missing after rewrite");
-    assert.ok("coding-architect" in profile.bindings, "coding-architect preserved (not legacy)");
-    // coding-orchestrator dropped with REMOVED warning.
-    assert.ok(!("coding-orchestrator" in profile.bindings));
-    // Aliases and channels preserved across the rewrite (per ADR-0034:
-    // the binding surface carries forward; only the key changes).
-    assert.equal(profile.bindings["coding-judge"].alias, "gpt-judgment-high");
-    assert.deepEqual(profile.bindings["coding-judge"].channels, ["official", "relay-default"]);
-    assert.equal(profile.bindings["coding-coder"].alias, "deepseek-verifiable");
-    assert.equal(profile.bindings["coding-diarist"].alias, "minimax-medium");
-    // Warnings: three DEPRECATED (reviewer, implementer, docs) + one REMOVED
-    // (orchestrator). The orchestrator warning is louder (per ADR-0010).
-    const warnings = profile.load_warnings;
-    const hasDeprecated = warnings.some((w) => /deprecated/i.test(w));
-    const hasRemoved = warnings.some((w) => /removed/i.test(w));
-    assert.ok(hasDeprecated, `expected at least one DEPRECATED warning, got: ${JSON.stringify(warnings)}`);
-    assert.ok(hasRemoved, `expected REMOVED warning for orchestrator, got: ${JSON.stringify(warnings)}`);
-    // No "deferred" warnings should appear when targets ship.
-    const hasDeferred = warnings.some((w) => /deferred/i.test(w));
-    assert.ok(!hasDeferred, `unexpected DEFERRED warning after B/C套 shipped: ${JSON.stringify(warnings)}`);
+    let err: Error | null = null;
+    try {
+        loadProfile(profilePath, PROJECT_ROOT);
+    } catch (e) {
+        err = e as Error;
+    }
+    assert.ok(err, "expected ProfileError to be thrown");
+    assert.match(err!.message, /coding-implementer/);
+    assert.match(err!.message, /renamed to 'coding-coder'/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-testApi("v0.6.0: coding-orchestrator binding is dropped with a louder warning", () => {
+testApi("v0.7.0: legacy binding for coding-reviewer fails with rename hint", () => {
     const dir = makeTempDir();
     const profilePath = writeProfile(dir, `
         framework_version: 0.5.0
-        name: orchestrator-deprecation
-        description: coding-orchestrator is gone
+        name: legacy-coding-reviewer
+        description: legacy coding-reviewer binding should error
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-reviewer: {alias: gpt-judgment-high, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+    `);
+    let err: Error | null = null;
+    try {
+        loadProfile(profilePath, PROJECT_ROOT);
+    } catch (e) {
+        err = e as Error;
+    }
+    assert.ok(err, "expected ProfileError to be thrown");
+    assert.match(err!.message, /coding-reviewer/);
+    assert.match(err!.message, /renamed to 'coding-judge'/);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: legacy binding for coding-docs fails with rename hint", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: legacy-coding-docs
+        description: legacy coding-docs binding should error
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-docs: {alias: minimax-medium, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+    `);
+    let err: Error | null = null;
+    try {
+        loadProfile(profilePath, PROJECT_ROOT);
+    } catch (e) {
+        err = e as Error;
+    }
+    assert.ok(err, "expected ProfileError to be thrown");
+    assert.match(err!.message, /coding-docs/);
+    assert.match(err!.message, /renamed to 'coding-diarist'/);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: legacy binding for coding-orchestrator fails with REMOVED hint", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: legacy-coding-orchestrator
+        description: legacy coding-orchestrator binding should error
         workflow:
           role_groups: [coding]
         bindings:
           coding-orchestrator: {alias: gpt-judgment-medium, channels: [official]}
           coding-architect: {alias: opus-thinking-medium, channels: [official]}
     `);
-    const profile = loadProfile(profilePath, PROJECT_ROOT);
-    // coding-orchestrator binding was dropped.
-    assert.ok(!("coding-orchestrator" in profile.bindings));
-    // A louder warning was emitted.
-    assert.ok(
-        profile.load_warnings.some((w) => /coding-orchestrator.*REMOVED/.test(w)),
-        "expected REMOVED warning for coding-orchestrator",
-    );
+    let err: Error | null = null;
+    try {
+        loadProfile(profilePath, PROJECT_ROOT);
+    } catch (e) {
+        err = e as Error;
+    }
+    assert.ok(err, "expected ProfileError to be thrown");
+    assert.match(err!.message, /coding-orchestrator/);
+    assert.match(err!.message, /REMOVED/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// Same as the previous test — end-to-end rewrite coverage lands with B套 (task 7).
+testApi("v0.7.0: legacy contracts declaration fails with migration hint", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: legacy-contracts
+        description: legacy coding-implementer contract should error
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-coder: {alias: deepseek-verifiable, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        contracts:
+          coding-implementer:
+            type: object
+    `);
+    let err: Error | null = null;
+    try {
+        loadProfile(profilePath, PROJECT_ROOT);
+    } catch (e) {
+        err = e as Error;
+    }
+    assert.ok(err, "expected ProfileError to be thrown");
+    assert.match(err!.message, /coding-implementer/);
+    assert.match(err!.message, /renamed to 'coding-coder'/);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
 
 testApi("v0.6.0: audit_max_resubmits default is null (unbounded, ADR-0007)", () => {
     const dir = makeTempDir();

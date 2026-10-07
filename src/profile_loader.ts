@@ -211,19 +211,22 @@ export interface Profile {
 }
 
 /**
- * v0.6.0: legacy role-name alias table.
+ * v0.6.0 → v0.7.0: legacy role-name redirect table.
  *
- * Each entry maps an old role name to the new role name(s). When a profile
- * declares a binding or contract for an old name, the loader rewrites it
- * to the new name and records a warning. v0.7.0 removes this shim.
+ * Used ONLY to produce a clear migration error when a profile still
+ * declares a binding or contract under a v0.6.0-era role name. Profiles
+ * that pre-date v0.6.0 used bare `implement`, `review`, `docs`, etc.;
+ * profiles that dated to v0.6.0 used `coding-implementer`, `coding-reviewer`,
+ * `coding-docs`, and `coding-orchestrator`. v0.7.0 removed the rewrite
+ * shim so all four old names now produce a hard error pointing to the
+ * new name (or to "removed entirely" for `coding-orchestrator`).
  *
- * `null` target = role is fully removed (orchestrator); the binding key
- * is dropped and a louder warning is emitted.
+ * `null` target = role is fully removed; no new name exists.
  */
-export const LEGACY_ROLE_ALIASES: Readonly<Record<string, readonly string[] | null>> = Object.freeze({
-    "coding-reviewer":      ["coding-judge"],
-    "coding-implementer":  ["coding-coder"],
-    "coding-docs":          ["coding-diarist"],
+export const LEGACY_ROLE_REDIRECTS: Readonly<Record<string, string | null>> = Object.freeze({
+    "coding-reviewer":      "coding-judge",
+    "coding-implementer":  "coding-coder",
+    "coding-docs":          "coding-diarist",
     "coding-orchestrator":  null,
 });
 
@@ -273,6 +276,17 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
             }
             const text = fs.readFileSync(mdPath, "utf8");
             const fm = parseFrontmatter(text);
+            // v0.7.0: skip role-pack files that declare `deprecated_redirect`
+            // in their frontmatter. The four legacy v0.6.0 roles
+            // (coding-implementer, coding-reviewer, coding-docs,
+            // coding-orchestrator) ship on disk for one release with
+            // `deprecated_redirect` set, then the file is removed in v0.8.x.
+            // Skipping here keeps the runtime `allowedRoles` clean so the
+            // migration hint path (LEGACY_ROLE_REDIRECTS) can fire when a
+            // profile still references the old name.
+            if ("deprecated_redirect" in fm) {
+                continue;
+            }
             const nameFromFm = typeof fm["name"] === "string"
                 ? (fm["name"] as string).trim() : "";
             const fullName = nameFromFm || `${group}-${role}`;
@@ -418,8 +432,10 @@ export function parseProfile(
         ...customRoles.map((r) => r.name),
     ]);
 
-    const { bindings: rawBindings, bindingsWarnings } =
-        parseBindingsWithLegacyRewrite(raw["bindings"] ?? {}, allowedRoles, packs);
+    const { bindings: rawBindings, bindingsWarnings } = {
+        bindings: parseBindings(raw["bindings"] ?? {}, allowedRoles, packs),
+        bindingsWarnings: [] as string[],
+    };
     const triggerOverridesRaw = raw["trigger_overrides"];
     if (triggerOverridesRaw !== undefined &&
         (typeof triggerOverridesRaw !== "object" || Array.isArray(triggerOverridesRaw))) {
@@ -439,6 +455,28 @@ export function parseProfile(
     const contracts = (contractsRaw && typeof contractsRaw === "object" && !Array.isArray(contractsRaw))
         ? contractsRaw as Record<string, unknown>
         : {};
+    // v0.7.0: reject contracts declared against v0.6.0-era legacy role
+    // names. Symmetric with the parseBindings check: profiles that still
+    // reference `coding-implementer`, `coding-reviewer`, `coding-docs`,
+    // or `coding-orchestrator` in `contracts:` get the same migration
+    // hint. Note this only fires at load time; `validateProfile` will
+    // also surface the legacy name through `validateAllContracts`, but
+    // failing fast here gives a clearer trace.
+    for (const roleName of Object.keys(contracts)) {
+        if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, roleName)) {
+            const target = LEGACY_ROLE_REDIRECTS[roleName];
+            if (target === null) {
+                throw new ProfileError(
+                    `contracts.${roleName}: REMOVED in v0.6.0. Callers should dispatch via the Agent tool directly. `
+                    + `Remove the '${roleName}' entry from your .pi/rolecast.yaml contracts.`,
+                );
+            }
+            throw new ProfileError(
+                `contracts.${roleName}: renamed to '${target}' in v0.6.0. Update your .pi/rolecast.yaml `
+                + `contracts to use the new name. See references/v0.6.0-optimization-roadmap.md.`,
+            );
+        }
+    }
 
     const profile: Profile = {
         framework_version: String(fv),
@@ -539,6 +577,23 @@ function parseBindings(
                 hint = (` (hint: '${role}' is a legacy coding role name; `
                         + `use 'coding-${role}' in v0.2.0+, and add `
                         + `\`workflow.role_groups: [coding]\` to your profile)`);
+            } else if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, role)) {
+                // v0.7.0: a profile still references a v0.6.0-era legacy
+                // name. The rewrite shim was removed; surface a hard error
+                // telling the user the new role to use (or "removed entirely"
+                // for coding-orchestrator). The runtime dispatcher
+                // (extension.ts) reuses the same table for the same purpose.
+                const target = LEGACY_ROLE_REDIRECTS[role];
+                if (target === null) {
+                    hint = (` (hint: '${role}' was REMOVED in v0.6.0. `
+                            + `Callers should dispatch via the Agent tool directly `
+                            + `instead of binding a dispatch surface for it. Remove `
+                            + `the '${role}' binding from your .pi/rolecast.yaml.)`);
+                } else {
+                    hint = (` (hint: '${role}' was renamed to '${target}' in v0.6.0. `
+                            + `Update your .pi/rolecast.yaml bindings to use the new `
+                            + `name. See references/v0.6.0-optimization-roadmap.md.)`);
+                }
             }
             throw new ProfileError(
                 `bindings key '${role}' is not in any enabled role group `
@@ -577,80 +632,10 @@ function parseBindings(
 
 
 /**
- * v0.6.0: Wrapper that rewrites legacy role-name bindings (LEGACY_ROLE_ALIASES)
- * to their new target(s), emits a load warning per rewrite, then delegates
- * to `parseBindings` against the rewritten key set.
- *
- * If a legacy role maps to `null` (e.g. `coding-orchestrator`), the binding
- * is dropped with a louder warning; the user's profile does not get a free
- * pass.
- *
- * For roles with multi-target aliases (none in v0.6.0, but reserved), the
- * binding key is rewritten to the first target; a warning notes the
- * remaining targets should be added explicitly.
+ * v0.7.0: legacy role-name rewrite shim was removed. Profiles declaring
+ * a v0.6.0-era binding name now fail loudly via `parseBindings` (which
+ * consults LEGACY_ROLE_REDIRECTS to produce a migration hint).
  */
-function parseBindingsWithLegacyRewrite(
-    raw: unknown,
-    allowedRoles: Set<string>,
-    packs: Record<string, RoleDef>,
-): { bindings: Record<string, Binding>; bindingsWarnings: string[] } {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-        throw new ProfileError("profile.bindings must be a mapping");
-    }
-    const warnings: string[] = [];
-    const rewritten: Record<string, unknown> = {};
-    for (const [role, value] of Object.entries(raw as Record<string, unknown>)) {
-        const alias = LEGACY_ROLE_ALIASES[role];
-        if (alias === undefined) {
-            rewritten[role] = value;
-            continue;
-        }
-        if (alias === null) {
-            warnings.push(
-                `bindings.${role}: REMOVED in v0.6.0. The coding-orchestrator role is deprecated; `
-                + `callers should dispatch via the Agent tool directly. This binding is dropped.`,
-            );
-            continue;
-        }
-        if (alias.length === 0) {
-            warnings.push(`bindings.${role}: legacy alias resolves to empty list; binding dropped.`);
-            continue;
-        }
-        const target = alias[0]!;
-        // Forward-reference guard: if the rewrite target role file does not
-        // exist yet (e.g. B/C套 role files haven't shipped), keep the old
-        // name and surface a "pending rewrite" warning. This makes the
-        // LEGACY_ROLE_ALIASES table safe to deploy before B/C套, which is
-        // the incremental delivery model. Once B/C套 land, the next reload
-        // will resolve the rewrite automatically.
-        if (!(target in packs)) {
-            rewritten[role] = value;
-            warnings.push(
-                `bindings.${role}: legacy alias target '${target}' is not yet shipped; `
-                + `the rewrite is deferred. Once '${target}' lands in role-packs, `
-                + `the framework will rewrite this binding automatically.`,
-            );
-            continue;
-        }
-        if (target in rewritten) {
-            warnings.push(
-                `bindings.${role}: legacy alias target '${target}' already present in bindings; `
-                + `this binding is dropped to avoid clobbering.`,
-            );
-            continue;
-        }
-        rewritten[target] = value;
-        const extra = alias.length > 1
-            ? ` (also recommended: ${alias.slice(1).join(", ")})`
-            : "";
-        warnings.push(
-            `bindings.${role}: DEPRECATED in v0.6.0. Rewrite to '${target}'.${extra} `
-            + `See references/v0.6.0-optimization-roadmap.md.`,
-        );
-    }
-    const bindings = parseBindings(rewritten, allowedRoles, packs);
-    return { bindings, bindingsWarnings: warnings };
-}
 
 
 function parseNonNegotiables(raw: unknown): NonNegotiables {

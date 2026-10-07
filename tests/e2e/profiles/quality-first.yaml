@@ -26,15 +26,14 @@ gates:
 bindings:
   coding-architect:    {alias: gpt-judgment-high,   channels: [official]}
   coding-planner:      {alias: gpt-judgment-high,   channels: [official]}
-  coding-implementer:  {alias: gpt-judgment-high,   channels: [official]}
+  coding-coder:  {alias: gpt-judgment-high,   channels: [official]}
   coding-tester:       {alias: gpt-judgment-high,   channels: [official]}
-  coding-reviewer:     {alias: gpt-judgment-high,   channels: [official]}
+  coding-judge:     {alias: gpt-judgment-high,   channels: [official]}
   coding-auditor:      {alias: gpt-judgment-high,   channels: [official]}
-  coding-orchestrator: {alias: gpt-judgment-medium, channels: [official]}
   coding-mapper:       {alias: gpt-judgment-high,   channels: [official]}
   coding-profiler:     {alias: gpt-judgment-high,   channels: [official]}
   coding-canary:       {alias: gpt-judgment-medium, channels: [official]}
-  coding-docs:         {alias: gpt-judgment-medium, channels: [official]}
+  coding-diarist:         {alias: gpt-judgment-medium, channels: [official]}
 
 non_negotiables:
   forbidden_patterns:

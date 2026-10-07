@@ -17,15 +17,14 @@ gates:
 bindings:
   coding-architect:    {alias: opus-thinking-medium, channels: [official]}
   coding-planner:      {alias: deepseek-verifiable, channels: [official]}
-  coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+  coding-coder:  {alias: deepseek-verifiable, channels: [official]}
   coding-tester:       {alias: deepseek-verifiable, channels: [official]}
-  coding-reviewer:     {alias: gpt-judgment-high, channels: [official, relay-default]}
+  coding-judge:     {alias: gpt-judgment-high, channels: [official, relay-default]}
   coding-mapper:       {alias: deepseek-verifiable, channels: [official]}
   coding-profiler:     {alias: deepseek-verifiable, channels: [official]}
   coding-auditor:      {alias: opus-thinking-high, channels: [official]}
   coding-canary:       {alias: minimax-fast, channels: [official]}
-  coding-docs:         {alias: minimax-medium, channels: [official]}
-  coding-orchestrator: {alias: gpt-judgment-medium, channels: [official, relay-default]}
+  coding-diarist:         {alias: minimax-medium, channels: [official]}
 
 non_negotiables:
   forbidden_patterns:

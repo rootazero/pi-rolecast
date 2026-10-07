@@ -28,7 +28,7 @@ bindings:
       - deepseek/deepseek-flash
 
   # v0.3.0: fallback chain only. requires comes from role-pack.
-  coding-implementer:
+  coding-coder:
     alias: deepseek-verifiable
     channels: [official]
     fallback_chain:
@@ -46,7 +46,7 @@ bindings:
   # v0.3.0: alias + fallback chain for high-reasoning review work.
   # reviewer role requires reasoning_tier=high + context_window>=64000
   # + features=[thinking, tool_use] (from role-pack).
-  coding-reviewer:
+  coding-judge:
     alias: gpt-judgment-high
     channels: [relay-default]
     fallback_chain:
@@ -79,15 +79,10 @@ bindings:
     channels: [official]
     fallback_chain: [anthropic/claude-opus-5-5]
 
-  coding-docs:
+  coding-diarist:
     alias: minimax-medium
     channels: [official]
     fallback_chain: [minimax/minimax-m3]
-
-  coding-orchestrator:
-    alias: gpt-judgment-medium
-    channels: [official, relay-default]
-    fallback_chain: [openai/gpt-6.1-sol]
 
 non_negotiables:
   forbidden_patterns:

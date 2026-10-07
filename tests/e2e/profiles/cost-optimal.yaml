@@ -36,23 +36,22 @@ gates:
 bindings:
   # ── Judgment tier (premium model — high cost but small volume) ──────────
   coding-architect:    {alias: gpt-judgment-high,   channels: [official]}
-  coding-reviewer:     {alias: gpt-judgment-high,   channels: [official]}
+  coding-judge:     {alias: gpt-judgment-high,   channels: [official]}
   coding-auditor:      {alias: gpt-judgment-medium, channels: [official]}
 
   # ── Verifiable tier (cheap + capable — bulk of the work) ─────────────────
   coding-planner:      {alias: deepseek-verifiable, channels: [official]}
-  coding-implementer:  {alias: deepseek-verifiable, channels: [official]}
+  coding-coder:  {alias: deepseek-verifiable, channels: [official]}
   coding-tester:       {alias: deepseek-verifiable, channels: [official]}
 
   # ── Orchestrator ─────────────────────────────────────────────────────────
   # Cheap high-reasoning — orchestrator dispatches but doesn't execute.
-  coding-orchestrator: {alias: opus-thinking-medium, channels: [official]}
 
   # ── Mechanical tier (cheapest, low thinking) ────────────────────────────
   coding-mapper:       {alias: minimax-fast, channels: [official]}
   coding-profiler:     {alias: minimax-fast, channels: [official]}
   coding-canary:       {alias: minimax-fast, channels: [official]}
-  coding-docs:         {alias: minimax-medium, channels: [official]}
+  coding-diarist:         {alias: minimax-medium, channels: [official]}
 
 non_negotiables:
   forbidden_patterns:

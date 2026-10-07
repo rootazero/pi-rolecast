@@ -295,14 +295,11 @@ test("validateProfile: sample-rust fixture reports VALID with resolved bindings"
     });
     assertLib.equal(r.ok, true);
     assertLib.ok(r.output.includes("is valid"));
-    // v0.6.0: coding-orchestrator binding is dropped (REMOVED warning),
-    // so 10 of the 11 fixture bindings resolve.
+    // v0.7.0: sample-rust fixture has 10 bindings (coding-orchestrator
+    // line was removed as part of LEGACY_ROLE_REDIRECTS). No legacy
+    // rewrite/hint is emitted — old names hard-fail at parseBindings.
     assertLib.ok(r.output.includes("bindings resolved: 10"));
     assertLib.ok(r.output.includes("coding-architect"));
-    assertLib.ok(
-        r.output.match(/coding-orchestrator.*REMOVED/),
-        "expected REMOVED warning for coding-orchestrator in validateProfile output",
-    );
 });
 
 test("validateProfile: malformed profile returns INVALID", () => {

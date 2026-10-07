@@ -16,7 +16,7 @@
  * Coverage:
  *   - happy path: fallback chain matches first candidate
  *   - capability gate: coding-architect requires high reasoning + 32k ctx
- *   - capability gate: coding-reviewer requires 64k ctx (filters out 32k models)
+ *   - capability gate: coding-judge requires 64k ctx (filters out 32k models)
  *   - preference ranking: ties broken lexicographically
  *   - tool_call blocks with reason when no candidate satisfies
  *   - tool_call injects model even if not in fallback chain (registry ranking)
@@ -276,12 +276,12 @@ test("tool_call injects resolved model into Agent invocation", async () => {
 		const toolCallHook = findHook(pi, "tool_call");
 		assert.ok(toolCallHook, "tool_call hook should be registered");
 
-		// Simulate the main LLM calling Agent for coding-implementer.
+		// Simulate the main LLM calling Agent for coding-coder.
 		const event = {
 			toolName: "Agent",
 			input: {
 				prompt: "implement the hello-world thing",
-				subagent_type: "coding-implementer",
+				subagent_type: "coding-coder",
 				description: "implement hello",
 			},
 		};
@@ -308,11 +308,11 @@ test("tool_call blocks when no candidate satisfies requires (with reason)", asyn
 			toolName: "Agent",
 			input: {
 				prompt: "review something",
-				subagent_type: "coding-reviewer",
+				subagent_type: "coding-judge",
 				description: "review",
 			},
 		};
-		// coding-reviewer's requires: context_window>=64000, reasoning_tier=high,
+		// coding-judge's requires: context_window>=64000, reasoning_tier=high,
 		// features=[thinking, tool_use]. Mock registry has gpt-6.1-sol (128k, high, thinking+tool_use)
 		// which DOES qualify — so this should resolve successfully.
 		const result = await toolCallHook.handler(event, pi);
@@ -337,7 +337,7 @@ test("tool_call blocks with reason when registry is empty", async () => {
 			toolName: "Agent",
 			input: {
 				prompt: "implement",
-				subagent_type: "coding-implementer",
+				subagent_type: "coding-coder",
 				description: "impl",
 			},
 		};
@@ -345,7 +345,7 @@ test("tool_call blocks with reason when registry is empty", async () => {
 		assert.ok(result, "expected block");
 		if (result && typeof result === "object") {
 			assert.equal(result.block, true);
-			assert.ok(typeof result.reason === "string" && result.reason.includes("coding-implementer"));
+			assert.ok(typeof result.reason === "string" && result.reason.includes("coding-coder"));
 			assert.ok(typeof result.reason === "string" && result.reason.includes("pi-rolecast"));
 		}
 		// input.model should NOT be mutated on failure.

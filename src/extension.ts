@@ -43,7 +43,6 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import {
 	dumpBindings,
-	resolveLegacyRoleName,
 	type BindingPayload,
 	type DumpBindingsResult,
 } from "./dump_bindings.js";
@@ -71,6 +70,7 @@ import {
 	DEFAULT_SETTINGS_PATH as SYNC_DEFAULT_SETTINGS_PATH,
 	type SyncResult,
 } from "./sync_settings.js";
+import { LEGACY_ROLE_REDIRECTS } from "./profile_loader.js";
 
 const execFileP = promisify(execFile);
 
@@ -872,16 +872,30 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		if (event.toolName === "Agent") {
 			const subagentType = input.subagent_type;
 			if (typeof subagentType !== "string" || subagentType.length === 0) return;
-			// v0.6.0: apply LEGACY_ROLE_ALIASES rewrite so legacy names
-			// (coding-implementer → coding-coder etc.) continue to resolve
-			// at dispatch time, even though the bindings cache now stores
-			// them under the new key.
-			const resolvedKey = resolveLegacyRoleName(subagentType, bindingsCache.bindings);
-			if (resolvedKey === null) return;
-			const payload = bindingsCache.bindings[resolvedKey];
-			if (!payload) return;
+			// v0.7.0: legacy-name rewrite shim removed. Profiles that declare
+			// a v0.6.0-era binding for `coding-implementer`, `coding-reviewer`,
+			// `coding-docs`, or `coding-orchestrator` fail at load time. At
+			// dispatch time we still want to surface the same migration message
+			// when an `@coding-implementer` at-handle (or explicit
+			// subagent_type) reaches the extension, so we check the redirect
+			// table here too — the bindings cache only holds the new names.
+			const payload = bindingsCache.bindings[subagentType];
+			if (!payload) {
+				if (Object.prototype.hasOwnProperty.call(LEGACY_ROLE_REDIRECTS, subagentType)) {
+					const target = LEGACY_ROLE_REDIRECTS[subagentType];
+					const reason = target === null
+						? `pi-rolecast: role '${subagentType}' was REMOVED in v0.6.0. `
+						  + `Callers should dispatch via the Agent tool directly. `
+						  + `See references/v0.6.0-optimization-roadmap.md.`
+						: `pi-rolecast: role '${subagentType}' was renamed to '${target}' `
+						  + `in v0.6.0. Update your .pi/rolecast.yaml bindings to use `
+						  + `the new name. See references/v0.6.0-optimization-roadmap.md.`;
+					return { block: true, reason, terminate: true };
+				}
+				return;
+			}
 			const registry = makeResolverRegistry(extCtx.modelRegistry);
-			const result = resolveForRole(resolvedKey, {
+			const result = resolveForRole(subagentType, {
 				binding: payload,
 				scopedModels: extCtx.scopedModels,
 				registry,
@@ -901,7 +915,7 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 			}
 			// Record the dispatched role so subsequent tool calls inside
 			// this subagent can be checked against allowed_tools / seatbelt.
-			currentRole = resolvedKey;
+			currentRole = subagentType;
 			return;
 		}
 

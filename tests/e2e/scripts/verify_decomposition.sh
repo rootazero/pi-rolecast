@@ -11,7 +11,7 @@
 #     "task": "<the original task>",
 #     "subtasks": [
 #       {"role": "coding-architect",    "summary": "...", "owner_alias": "..."},
-#       {"role": "coding-implementer",  "summary": "...", "owner_alias": "..."},
+#       {"role": "coding-coder",  "summary": "...", "owner_alias": "..."},
 #       ...
 #     ]
 #   }

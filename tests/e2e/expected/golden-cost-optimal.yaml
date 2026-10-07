@@ -8,14 +8,6 @@
 # what the profile declares.
 
 role_expectations:
-  coding-orchestrator:
-    alias: opus-thinking-medium
-    model_id: MiniMax-M3
-    provider: minimax-cn
-    channel: official
-    cost_tier: orchestrator
-    note: "cheap high-reasoning; orchestrates but doesn't execute; classified as orchestrator tier (M3-bound, low cost)"
-
   coding-architect:
     alias: gpt-judgment-high
     model_id: gpt-5.5
@@ -32,7 +24,7 @@ role_expectations:
     cost_tier: verifiable
     note: "cheap; plans are verifiable against spec"
 
-  coding-implementer:
+  coding-coder:
     alias: deepseek-verifiable
     model_id: deepseek-flash
     provider: deepseek
@@ -48,7 +40,7 @@ role_expectations:
     cost_tier: verifiable
     note: "cheap; tests must pass — gate-verified"
 
-  coding-reviewer:
+  coding-judge:
     alias: gpt-judgment-high
     model_id: gpt-5.5
     provider: openai-codex
@@ -88,7 +80,7 @@ role_expectations:
     cost_tier: mechanical
     note: "cheapest; mechanical check"
 
-  coding-docs:
+  coding-diarist:
     alias: minimax-medium
     model_id: MiniMax-M3
     provider: minimax-cn
@@ -104,7 +96,7 @@ cost_expectations:
   # Note: these are ratios against the run's own total, not against another
   # profile. The actual cost-effectiveness claim is "judgment tier uses
   # premium model but volume is bounded".
-  judgment_tier_roles: [coding-architect, coding-reviewer, coding-auditor]
-  verifiable_tier_roles: [coding-planner, coding-implementer, coding-tester]
-  mechanical_tier_roles: [coding-mapper, coding-profiler, coding-canary, coding-docs]
-  orchestrator_roles: [coding-orchestrator]
+  judgment_tier_roles: [coding-architect, coding-judge, coding-auditor]
+  verifiable_tier_roles: [coding-planner, coding-coder, coding-tester]
+  mechanical_tier_roles: [coding-mapper, coding-profiler, coding-canary, coding-diarist]
+  orchestrator_roles: []

@@ -18,7 +18,6 @@ import * as path from "node:path";
 import {
     availableRoles,
     findProfile,
-    LEGACY_ROLE_ALIASES,
     loadProfile,
     ProfileError,
     type Profile,
@@ -133,35 +132,14 @@ export function dumpBindings(opts: DumpBindingsOptions = {}): DumpBindingsResult
 }
 
 /**
- * v0.6.0 — legacy-name lookup helper.
+ * v0.7.0: legacy-name rewrite shim removed. `LEGACY_ROLE_ALIASES` no
+ * longer exists; profiles declaring v0.6.0-era role names fail at
+ * load time via `parseBindings` + `LEGACY_ROLE_REDIRECTS` with a clear
+ * migration error pointing to the new role name (or "removed entirely"
+ * for `coding-orchestrator`). The runtime dispatcher
+ * (src/extension.ts) uses the same redirect table to surface the same
+ * error when an `@coding-implementer` at-handle reaches the extension.
  *
- * Given a subagent_type string from the Agent tool and the current
- * bindings cache, return the actual binding key to use. If `name` is
- * already a current key, returns it unchanged. Otherwise consults
- * `LEGACY_ROLE_ALIASES` to rewrite legacy names (coding-implementer
- * → coding-coder, coding-reviewer → coding-judge, coding-docs →
- * coding-diarist). Returns `null` when the name has no known binding
- * (either truly unknown, or fully removed like coding-orchestrator).
- *
- * Recursion handles the (theoretical) case where a legacy alias points
- * at another legacy alias. Bound by the size of LEGACY_ROLE_ALIASES.
- */
-export function resolveLegacyRoleName(
-    name: string,
-    bindings: Record<string, BindingPayload>,
-): string | null {
-    if (Object.prototype.hasOwnProperty.call(bindings, name)) return name;
-    const alias = LEGACY_ROLE_ALIASES[name];
-    if (alias === undefined) return null;
-    if (alias === null) return null;
-    const target = alias[0];
-    if (target === undefined) return null;
-    if (Object.prototype.hasOwnProperty.call(bindings, target)) return target;
-    // Recurse in case a legacy alias points at another legacy alias.
-    return resolveLegacyRoleName(target, bindings);
-}
-
-/**
  * CLI wrapper — emit JSON to stdout, exit code to the OS. Kept so that
  * any out-of-band scripts that used to shell out to `dump_bindings.py`
  * can be rewritten to call `node dist/dump_bindings.js` instead.

@@ -1,7 +1,8 @@
 ---
 name: coding-reviewer
 category: coding
-description: Review a diff before merge. Enforce non-negotiables and channel-trust flags.
+deprecated_redirect: coding-judge
+description: "DEPRECATED — review a diff before merge. Redirect to coding-judge (v0.6.0, ADR-0034 audit triad). This file is preserved for one release; the LEGACY_ROLE_REDIRECTS table surfaces the new name in migration hints."
 model: deepseek-flash
 thinking: high
 model_tier: strong
