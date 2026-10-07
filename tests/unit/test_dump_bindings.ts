@@ -71,7 +71,10 @@ test("dumpBindings: real fixture emits bindings with expected keys", () => {
     assertLib.ok(bindings.includes("coding-implementer"));
     assertLib.ok(bindings.includes("coding-tester"));
     assertLib.ok(bindings.includes("coding-reviewer"));
-    assertLib.ok(bindings.includes("coding-orchestrator"));
+    // v0.6.0: coding-orchestrator is dropped via REMOVED warning.
+    // Sample-rust fixture declared it; after the LEGACY_ROLE_ALIASES rewrite
+    // it no longer appears in resolved bindings.
+    assertLib.ok(!bindings.includes("coding-orchestrator"));
 });
 
 test("dumpBindings: each binding has alias/channels/fallback_chain/requires/preferences", () => {

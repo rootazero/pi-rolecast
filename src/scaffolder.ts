@@ -14,6 +14,7 @@ import * as path from "node:path";
 import { dump as yamlDump, load as yamlLoad } from "js-yaml";
 
 import { loadProfile, ProfileError } from "./profile_loader.js";
+import { validateAllContracts } from "./contracts.js";
 
 // ─────────────────────────────────────────────────────────────────────
 // Language auto-detect (spec §9.2)
@@ -305,6 +306,20 @@ export interface ValidateProfileResult {
 export function validateProfile(opts: ValidateProfileOptions): ValidateProfileResult {
     try {
         const profile = loadProfile(opts.profilePath, opts.frameworkRoot);
+        // v0.6.0: union of bound role names + custom_roles, used to surface
+        // contracts that target an unbound role as a non-fatal warning.
+        const boundRoleNames = new Set<string>([
+            ...Object.keys(profile.bindings),
+            ...profile.custom_roles.map((r) => r.name),
+        ]);
+        // v0.6.0: structurally validate every `contracts.<role>` schema.
+        // Throws ContractError on malformed schema; returns warnings for
+        // contracts targeting unbound roles (e.g. custom_roles declared
+        // elsewhere, or stale role names that did not match any binding).
+        const { warnings: contractWarnings } = validateAllContracts(
+            profile.contracts,
+            boundRoleNames,
+        );
         const lines: string[] = [];
         lines.push(`profile '${profile.name}' is valid (framework ${profile.framework_version})`);
         lines.push(`  bindings resolved: ${Object.keys(profile.resolved_bindings).length}`);
@@ -312,10 +327,33 @@ export function validateProfile(opts: ValidateProfileOptions): ValidateProfileRe
             const warn = rb.warning ? ` [WARN: ${rb.warning}]` : "";
             lines.push(`    ${role}: ${rb.alias} -> ${rb.model_id} on ${rb.channel_id}${warn}`);
         }
+        if (profile.contracts && Object.keys(profile.contracts).length > 0) {
+            lines.push(`  contracts declared: ${Object.keys(profile.contracts).length}`);
+        }
+        if (profile.escalation.audit_max_resubmits !== null) {
+            lines.push(`  escalation.audit_max_resubmits: ${profile.escalation.audit_max_resubmits}`);
+        } else {
+            lines.push(`  escalation.audit_max_resubmits: unbounded (ADR-0007 default)`);
+        }
+        const warnings: string[] = [];
+        // Load-time warnings (LEGACY_ROLE_ALIASES rewrites, etc.).
+        for (const w of profile.load_warnings) warnings.push(w);
+        // Contract warnings (unbound role targets, etc.).
+        for (const w of contractWarnings) warnings.push(w);
+        if (warnings.length > 0) {
+            lines.push("");
+            lines.push(`warnings (${warnings.length}):`);
+            for (const w of warnings) lines.push(`  - ${w}`);
+        }
         return { ok: true, output: lines.join("\n") };
     } catch (e) {
+        // ProfileError (schema) and ContractError (contract shape) both
+        // surface as INVALID.
         if (e instanceof ProfileError) {
             return { ok: false, output: `INVALID: ${e.message}` };
+        }
+        if (e && typeof e === "object" && (e as { name?: string }).name === "ContractError") {
+            return { ok: false, output: `INVALID: ${(e as Error).message}` };
         }
         const msg = e instanceof Error ? e.message : String(e);
         return { ok: false, output: `INVALID: ${msg}` };

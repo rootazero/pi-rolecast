@@ -578,3 +578,203 @@ testApi("DEFAULT_TRIGGERS covers 10 coding roles (orchestrator excluded)", () =>
 testApi("DEFAULT_FRAMEWORK_VERSION is 0.2.0", () => {
     assert.equal(DEFAULT_FRAMEWORK_VERSION, "0.2.0");
 });
+// ─────────────────────────────────────────────────────────────────────
+// v0.6.0 — Output contracts, audit_max_resubmits, legacy role rewrites
+// ─────────────────────────────────────────────────────────────────────
+
+import { LEGACY_ROLE_ALIASES } from "../../src/profile_loader.js";
+
+testApi("v0.6.0: LEGACY_ROLE_ALIASES exposes the four documented legacy roles", () => {
+    assert.ok("coding-reviewer" in LEGACY_ROLE_ALIASES);
+    assert.ok("coding-implementer" in LEGACY_ROLE_ALIASES);
+    assert.ok("coding-docs" in LEGACY_ROLE_ALIASES);
+    assert.ok("coding-orchestrator" in LEGACY_ROLE_ALIASES);
+    // coding-orchestrator is fully removed (null target).
+    assert.equal(LEGACY_ROLE_ALIASES["coding-orchestrator"], null);
+    // The other three map to a single new role each.
+    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-reviewer"], ["coding-judge"]);
+    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-implementer"], ["coding-coder"]);
+    assert.deepEqual(LEGACY_ROLE_ALIASES["coding-docs"], ["coding-diarist"]);
+});
+
+testApi("v0.6.0: legacy alias is deferred until target role exists in role-packs (B/C套 not yet shipped)", () => {
+    // As of v0.6.0-alpha (A套 landed, B/C套 pending), the alias targets
+    // coding-judge / coding-coder / coding-diarist do NOT yet exist in
+    // role-packs/. The forward-reference guard keeps the old name and
+    // emits a "deferred rewrite" warning instead of breaking the profile.
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: legacy-test
+        description: test that legacy roles still resolve when targets are not yet shipped
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-reviewer: {alias: deepseek-verifiable, channels: [official]}
+          coding-implementer: {alias: deepseek-verifiable, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: 2
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    // Old keys preserved (targets not yet shipped).
+    assert.ok("coding-reviewer" in profile.bindings);
+    assert.ok("coding-implementer" in profile.bindings);
+    assert.ok("coding-architect" in profile.bindings);
+    // Two "deferred" warnings emitted — one per legacy alias.
+    assert.equal(profile.load_warnings.length, 2);
+    for (const w of profile.load_warnings) {
+        assert.match(w, /deferred/i, `expected 'deferred' in warning: ${w}`);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// NOTE: end-to-end rewrite verification deferred to B套 (task 7). When
+// coding-judge.md and coding-coder.md ship, drop a profile using those
+// names into tests/fixtures/ and add a fixture-driven rewrite test here.
+// Until then, the deferred path is exercised by the test directly above.
+
+testApi("v0.6.0: coding-orchestrator binding is dropped with a louder warning", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: orchestrator-deprecation
+        description: coding-orchestrator is gone
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-orchestrator: {alias: gpt-judgment-medium, channels: [official]}
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    // coding-orchestrator binding was dropped.
+    assert.ok(!("coding-orchestrator" in profile.bindings));
+    // A louder warning was emitted.
+    assert.ok(
+        profile.load_warnings.some((w) => /coding-orchestrator.*REMOVED/.test(w)),
+        "expected REMOVED warning for coding-orchestrator",
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Same as the previous test — end-to-end rewrite coverage lands with B套 (task 7).
+
+testApi("v0.6.0: audit_max_resubmits default is null (unbounded, ADR-0007)", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: audit-default
+        description: audit_max_resubmits should be null when omitted
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: 2
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.audit_max_resubmits, null);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.6.0: audit_max_resubmits parses explicit non-negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: audit-capped
+        description: cap audit retries at 3
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: 2
+          audit_max_resubmits: 3
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.audit_max_resubmits, 3);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.6.0: audit_max_resubmits rejects negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: audit-negative
+        description: negative integer should be rejected
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          audit_max_resubmits: -1
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /audit_max_resubmits/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.6.0: audit_max_resubmits rejects non-integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: audit-float
+        description: float should be rejected (must be integer or null)
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          audit_max_resubmits: 2.5
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /audit_max_resubmits/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.6.0: contracts field loads as a parsed mapping", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: contracts-test
+        description: contracts mapping loads
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        contracts:
+          coding-architect:
+            type: object
+            required: [decision]
+            properties:
+              decision:
+                enum: [option_a, option_b, option_c]
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.ok("coding-architect" in profile.contracts);
+    const schema = profile.contracts["coding-architect"] as Record<string, unknown>;
+    assert.equal(schema["type"], "object");
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.6.0: contracts field rejects non-mapping", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: contracts-bad
+        description: contracts must be a mapping
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        contracts:
+          - bad
+          - shape
+    `);
+    assert.throws(() => loadProfile(profilePath, PROJECT_ROOT), /contracts/);
+    fs.rmSync(dir, { recursive: true, force: true });
+});

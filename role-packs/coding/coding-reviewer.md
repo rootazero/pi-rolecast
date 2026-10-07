@@ -10,6 +10,16 @@ requires:
   reasoning_tier: high
   context_window: 64000
   features: [thinking, tool_use]
+
+# A2 — allowed_tools (per ADR-0008 toolset narrowing)
+# Reviewer is read-only by default. Write/edit tools are intentionally excluded.
+allowed_tools: [read, grep, find, ls, bash]
+soul: souls/audit-law.md
+forbidden_bash_patterns:
+  - "rm -rf"
+  - "git reset --hard"
+  - "git clean"
+  - "git checkout --"
 ---
 
 # Reviewer

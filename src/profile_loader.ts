@@ -99,6 +99,12 @@ export interface Escalation {
     max_attempts: number;
     on_permanent_failure: "stop" | "continue";
     preserve_logs: boolean;
+    /**
+     * v0.6.0: cap on audit-phase resubmissions. `null` (default) = unbounded,
+     * honouring ADR-0007's "no retry brake on audit" principle. A finite
+     * number aborts the audit gate after that many rejected resubmissions.
+     */
+    audit_max_resubmits: number | null;
 }
 
 export interface RoleDef {
@@ -110,6 +116,24 @@ export interface RoleDef {
     requires: Record<string, unknown>;
     preferences: Record<string, unknown>;
     file_path: string | null;
+    // v0.6.0 (A2): optional whitelist of tool names this role may invoke.
+    // When present, sync_settings writes a "Tool restrictions" block into
+    // the generated agent file body; the framework does NOT enforce the
+    // restriction at the framework layer (per ADR-0008, audit-seat
+    // narrowing is a prompt-level contract, not a runtime gate). When
+    // absent, the role may use any tool.
+    allowed_tools: string[] | null;
+    // v0.6.0 (A3): relative path from this role file to a shared "soul"
+    // markdown file (e.g. "../souls/coding/_common.md"). sync_settings
+    // prepends the soul content to the generated agent file body, after
+    // frontmatter. The role's own body is treated as the "host overlay"
+    // per ADR-0005.
+    soul_path: string | null;
+    // v0.6.0 (A5): literal-substring bash seatbelt (ADR-0008). sync_settings
+    // writes a "Bash seatbelt" block listing these patterns; the framework
+    // does NOT enforce (seatbelt is 防呆不防坏). When empty/absent, no block
+    // is written.
+    forbidden_bash_patterns: string[];
 }
 
 export interface Model {
@@ -157,8 +181,36 @@ export interface Profile {
     trigger_overrides: Record<string, unknown>;
     custom_roles: CustomRole[];
     workflow: WorkflowConfig;
+    /**
+     * v0.6.0: per-role output-contract JSON Schemas. Validated structurally
+     * by `scaffolder validate` (see src/contracts.ts); not enforced at dispatch.
+     */
+    contracts: Record<string, unknown>;
+    /**
+     * v0.6.0: warnings collected during load (e.g. legacy role-name bindings
+     * resolved via LEGACY_ROLE_ALIASES; contract for undeclared role).
+     * Surface these from `scaffolder validate` so users see them.
+     */
+    load_warnings: string[];
     resolved_bindings: Record<string, ResolvedBinding>;
 }
+
+/**
+ * v0.6.0: legacy role-name alias table.
+ *
+ * Each entry maps an old role name to the new role name(s). When a profile
+ * declares a binding or contract for an old name, the loader rewrites it
+ * to the new name and records a warning. v0.7.0 removes this shim.
+ *
+ * `null` target = role is fully removed (orchestrator); the binding key
+ * is dropped and a louder warning is emitted.
+ */
+export const LEGACY_ROLE_ALIASES: Readonly<Record<string, readonly string[] | null>> = Object.freeze({
+    "coding-reviewer":      ["coding-judge"],
+    "coding-implementer":  ["coding-coder"],
+    "coding-docs":          ["coding-diarist"],
+    "coding-orchestrator":  null,
+});
 
 // ─────────────────────────────────────────────────────────────────────
 // Frontmatter parsing
@@ -217,6 +269,25 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
             const preferencesRaw = (fm["preferences"] && typeof fm["preferences"] === "object" && !Array.isArray(fm["preferences"]))
                 ? fm["preferences"] as Record<string, unknown>
                 : {};
+            // v0.6.0: allowed_tools (A2). Optional list of strings; missing
+            // or non-array → null (= no restriction documented).
+            const allowedToolsRaw = fm["allowed_tools"];
+            let allowedTools: string[] | null = null;
+            if (Array.isArray(allowedToolsRaw)) {
+                const filtered = allowedToolsRaw.filter((x): x is string => typeof x === "string");
+                if (filtered.length > 0) allowedTools = filtered;
+            }
+            // v0.6.0: soul_path (A3). Relative path from this role file to a
+            // shared soul markdown. Will be resolved to an absolute path at
+            // sync time; for the RoleDef we just record the raw string.
+            const soulPath = typeof fm["soul"] === "string"
+                ? (fm["soul"] as string).trim() || null
+                : null;
+            // v0.6.0: forbidden_bash_patterns (A5). Literal substrings.
+            const fbpRaw = fm["forbidden_bash_patterns"];
+            const forbiddenBashPatterns: string[] = Array.isArray(fbpRaw)
+                ? fbpRaw.filter((x): x is string => typeof x === "string")
+                : [];
             roles.push({
                 full_name: fullName,
                 group,
@@ -226,6 +297,9 @@ export function discoverRolePacks(frameworkRoot: string): Record<string, RoleDef
                 requires: { ...requiresRaw },
                 preferences: { ...preferencesRaw },
                 file_path: mdPath,
+                allowed_tools: allowedTools,
+                soul_path: soulPath,
+                forbidden_bash_patterns: forbiddenBashPatterns,
             });
         }
         if (roles.length > 0) {
@@ -329,7 +403,8 @@ export function parseProfile(
         ...customRoles.map((r) => r.name),
     ]);
 
-    const bindings = parseBindings(raw["bindings"] ?? {}, allowedRoles, packs);
+    const { bindings: rawBindings, bindingsWarnings } =
+        parseBindingsWithLegacyRewrite(raw["bindings"] ?? {}, allowedRoles, packs);
     const triggerOverridesRaw = raw["trigger_overrides"];
     if (triggerOverridesRaw !== undefined &&
         (typeof triggerOverridesRaw !== "object" || Array.isArray(triggerOverridesRaw))) {
@@ -341,17 +416,28 @@ export function parseProfile(
     const nonNegotiables = parseNonNegotiables(raw["non_negotiables"] ?? {});
     const escalation = parseEscalation(raw["escalation"] ?? {});
 
+    const contractsRaw = raw["contracts"];
+    if (contractsRaw !== undefined && contractsRaw !== null
+        && (typeof contractsRaw !== "object" || Array.isArray(contractsRaw))) {
+        throw new ProfileError("profile.contracts must be a mapping of role-name -> schema");
+    }
+    const contracts = (contractsRaw && typeof contractsRaw === "object" && !Array.isArray(contractsRaw))
+        ? contractsRaw as Record<string, unknown>
+        : {};
+
     const profile: Profile = {
         framework_version: String(fv),
         name: String(name),
         description: String(description),
         gates,
-        bindings,
+        bindings: rawBindings,
         non_negotiables: nonNegotiables,
         escalation,
         trigger_overrides: triggerOverrides,
         custom_roles: customRoles,
         workflow,
+        contracts,
+        load_warnings: bindingsWarnings,
         resolved_bindings: {},
     };
 
@@ -474,6 +560,84 @@ function parseBindings(
     return out;
 }
 
+
+/**
+ * v0.6.0: Wrapper that rewrites legacy role-name bindings (LEGACY_ROLE_ALIASES)
+ * to their new target(s), emits a load warning per rewrite, then delegates
+ * to `parseBindings` against the rewritten key set.
+ *
+ * If a legacy role maps to `null` (e.g. `coding-orchestrator`), the binding
+ * is dropped with a louder warning; the user's profile does not get a free
+ * pass.
+ *
+ * For roles with multi-target aliases (none in v0.6.0, but reserved), the
+ * binding key is rewritten to the first target; a warning notes the
+ * remaining targets should be added explicitly.
+ */
+function parseBindingsWithLegacyRewrite(
+    raw: unknown,
+    allowedRoles: Set<string>,
+    packs: Record<string, RoleDef>,
+): { bindings: Record<string, Binding>; bindingsWarnings: string[] } {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new ProfileError("profile.bindings must be a mapping");
+    }
+    const warnings: string[] = [];
+    const rewritten: Record<string, unknown> = {};
+    for (const [role, value] of Object.entries(raw as Record<string, unknown>)) {
+        const alias = LEGACY_ROLE_ALIASES[role];
+        if (alias === undefined) {
+            rewritten[role] = value;
+            continue;
+        }
+        if (alias === null) {
+            warnings.push(
+                `bindings.${role}: REMOVED in v0.6.0. The coding-orchestrator role is deprecated; `
+                + `callers should dispatch via the Agent tool directly. This binding is dropped.`,
+            );
+            continue;
+        }
+        if (alias.length === 0) {
+            warnings.push(`bindings.${role}: legacy alias resolves to empty list; binding dropped.`);
+            continue;
+        }
+        const target = alias[0]!;
+        // Forward-reference guard: if the rewrite target role file does not
+        // exist yet (e.g. B/C套 role files haven't shipped), keep the old
+        // name and surface a "pending rewrite" warning. This makes the
+        // LEGACY_ROLE_ALIASES table safe to deploy before B/C套, which is
+        // the incremental delivery model. Once B/C套 land, the next reload
+        // will resolve the rewrite automatically.
+        if (!(target in packs)) {
+            rewritten[role] = value;
+            warnings.push(
+                `bindings.${role}: legacy alias target '${target}' is not yet shipped; `
+                + `the rewrite is deferred. Once '${target}' lands in role-packs, `
+                + `the framework will rewrite this binding automatically.`,
+            );
+            continue;
+        }
+        if (target in rewritten) {
+            warnings.push(
+                `bindings.${role}: legacy alias target '${target}' already present in bindings; `
+                + `this binding is dropped to avoid clobbering.`,
+            );
+            continue;
+        }
+        rewritten[target] = value;
+        const extra = alias.length > 1
+            ? ` (also recommended: ${alias.slice(1).join(", ")})`
+            : "";
+        warnings.push(
+            `bindings.${role}: DEPRECATED in v0.6.0. Rewrite to '${target}'.${extra} `
+            + `See references/v0.6.0-optimization-roadmap.md.`,
+        );
+    }
+    const bindings = parseBindings(rewritten, allowedRoles, packs);
+    return { bindings, bindingsWarnings: warnings };
+}
+
+
 function parseNonNegotiables(raw: unknown): NonNegotiables {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
         throw new ProfileError("profile.non_negotiables must be a mapping");
@@ -526,10 +690,21 @@ function parseEscalation(raw: unknown): Escalation {
     if (opf !== "stop" && opf !== "continue") {
         throw new ProfileError("escalation.on_permanent_failure must be 'stop' or 'continue'");
     }
+    let auditMax: number | null = null;
+    if ("audit_max_resubmits" in obj && obj["audit_max_resubmits"] !== null) {
+        const v = obj["audit_max_resubmits"];
+        if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+            throw new ProfileError(
+                "escalation.audit_max_resubmits must be a non-negative integer or null",
+            );
+        }
+        auditMax = v;
+    }
     return {
         max_attempts: typeof obj["max_attempts"] === "number" ? obj["max_attempts"] : 2,
         on_permanent_failure: opf,
         preserve_logs: obj["preserve_logs"] === undefined ? true : Boolean(obj["preserve_logs"]),
+        audit_max_resubmits: auditMax,
     };
 }
 

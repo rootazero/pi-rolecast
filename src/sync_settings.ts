@@ -229,6 +229,98 @@ export interface WriteAgentsResult {
     perRole: Record<string, { model: string; provider: string; writtenTo?: string }>;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// v0.6.0 — soul preload (A3) + tool restrictions (A2) + bash seatbelt (A5)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the role's `soul:` path (relative to its role-packs file) to an
+ * absolute path and load its content. Returns null if no soul is declared
+ * or if the file is missing (warning printed). Never throws.
+ *
+ * The soul file's content is "generic law" per ADR-0005; the role body is
+ * the "host overlay". Prepending the soul puts the generic constraints
+ * ahead of the role-specific guidance in the generated agent file.
+ */
+export function loadSoulPrepend(rd: RoleDef, roleFilePath: string): string | null {
+    if (rd.soul_path === null) return null;
+    const abs = path.resolve(path.dirname(roleFilePath), rd.soul_path);
+    if (!fs.existsSync(abs)) {
+        process.stderr.write(
+            `warning: role '${rd.full_name}' declares soul '${rd.soul_path}' but the file is missing at ${abs}\n`,
+        );
+        return null;
+    }
+    return fs.readFileSync(abs, "utf8");
+}
+
+/**
+ * Prepend soul content to a role body, separating them with a clear
+ * divider so the role (and the human reading the file) sees both layers.
+ * Frontmatter is preserved at the top.
+ */
+export function prependSoul(body: string, soul: string): string {
+    const divider = "\n<!-- ▼ soul (v0.6.0) — generic law overlay; do not edit, edit the source soul file -->\n";
+    const closing = "\n<!-- ▲ end soul -->\n\n";
+    // If body has a leading frontmatter, splice the soul block right after it.
+    const fmMatch = body.match(/^---\s*\n[\s\S]*?\n---\s*\n/);
+    if (fmMatch !== null) {
+        const fm = fmMatch[0];
+        const rest = body.slice(fm.length);
+        return fm + divider + soul.trimEnd() + closing + rest;
+    }
+    return divider + soul.trimEnd() + closing + body;
+}
+
+/**
+ * v0.6.0 (A2): If the role declares `allowed_tools`, append a Tool
+ * restrictions block listing exactly those tools. Per ADR-0008, this is
+ * documentation — the framework does NOT enforce the restriction at
+ * runtime; the role is expected to honour it because the prompt says so.
+ *
+ * When `allowed_tools` is null or empty, no block is written (the role
+ * is unrestricted; backward-compatible with v0.5.x role packs).
+ */
+export function appendToolRestrictions(body: string, allowed: string[] | null): string {
+    if (allowed === null || allowed.length === 0) return body;
+    const list = allowed.map((t) => `\`-${t}\``).join(", ");
+    const block = `\n## Tool restrictions (v0.6.0)\n\n` +
+        `You may only use the following tools on this dispatch: ${list}.\n\n` +
+        `If a task requires a tool not in this list, do NOT work around the restriction by\n` +
+        `paraphrasing the action or chaining simpler tools to mimic the effect. Instead, write\n` +
+        `a findings entry (or, for non-audit roles, a single line in your final report) explaining\n` +
+        `which tool you would need and why, and ask the caller to dispatch a different role or\n` +
+        `lift the restriction explicitly.\n` +
+        `\n` +
+        `This block is declarative — the framework does not enforce it at the tool-call layer\n` +
+        `(per ADR-0008). Honour it because the prompt says so.\n`;
+    return body + block;
+}
+
+/**
+ * v0.6.0 (A5): Bash seatbelt. Literal substring filter (ADR-0008) — the
+ * following command patterns must not be emitted under any circumstance.
+ * If a task genuinely requires one of these, the role must write a
+ * findings entry and ask the caller to run it out-of-band.
+ *
+ * Empty / absent → no block written (backward-compatible).
+ */
+export function appendBashSeatbelt(body: string, patterns: readonly string[]): string {
+    if (patterns.length === 0) return body;
+    const list = patterns.map((p) => `\`-${p}\``).join("\n- ");
+    const block = `\n## Bash seatbelt (v0.6.0)\n\n` +
+        `You have a literal-substring bash seatbelt. The following command patterns\n` +
+        `must NOT be emitted as a single bash tool call:\n\n` +
+        `- ${list}\n\n` +
+        `A hit on any of these is a prompt-level violation. If a task genuinely requires one of\n` +
+        `these operations, write a findings entry explaining why and ask the caller to run it\n` +
+        `out-of-band. Do not paraphrase or encode the same effect via different syntax —\n` +
+        `the policy is literal.\n\n` +
+        `The framework does not enforce this at the tool-call layer (per ADR-0008;\n` +
+        `seatbelt 防呆不防坏). Honour it because the prompt says so.\n`;
+    return body + block;
+}
+
 export function writeAgents(opts: {
     agentsDir: string;
     frameworkRoot: string;
@@ -258,8 +350,19 @@ export function writeAgents(opts: {
             process.stderr.write(`warning: role-packs file not found: ${rd.file_path}\n`);
             continue;
         }
-        const body = fs.readFileSync(src, "utf8");
-        const updated = setFrontmatterField(body, "model", full);
+        const rawBody = fs.readFileSync(src, "utf8");
+        // v0.6.0 (A3): if the role declares a `soul:` path, load and prepend
+        // it. The soul content is treated as the "generic law" overlay per
+        // ADR-0005; the role body becomes the "host overlay" (more specific).
+        const soulPrepend = loadSoulPrepend(rd, src);
+        const withSoul = soulPrepend === null ? rawBody : prependSoul(rawBody, soulPrepend);
+        // v0.6.0 (A2): if the role declares allowed_tools, append a
+        // Tool-restrictions block after the role body.
+        const withTools = appendToolRestrictions(withSoul, rd.allowed_tools);
+        // v0.6.0 (A5): if the role declares forbidden_bash_patterns, append
+        // a Bash-seatbelt block (literal substrings per ADR-0008).
+        const withSeatbelt = appendBashSeatbelt(withTools, rd.forbidden_bash_patterns);
+        const updated = setFrontmatterField(withSeatbelt, "model", full);
         fs.mkdirSync(opts.agentsDir, { recursive: true });
         fs.writeFileSync(dst, updated);
         written++;
