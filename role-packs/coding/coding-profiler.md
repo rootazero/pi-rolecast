@@ -6,6 +6,7 @@ model: deepseek-flash
 thinking: medium
 model_tier: balanced
 model_recommendation: deepseek-verifiable
+souls_extra: [../../souls/quality-law.md]
 ---
 
 # Profiler

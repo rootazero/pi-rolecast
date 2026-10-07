@@ -50,7 +50,7 @@ sanity checks — if you find yourself rubber-stamping, you are out of role.
 
 Always emit, in this exact order:
 
-1. **COUNTERSIGN**: `CONFIRM` (judge's verdict stands) or `OBJECT`
+1. **OBJECTOR**: `CONFIRM` (judge's verdict stands) or `OBJECT`
    (judge's verdict is wrong — see counter-finding).
 2. **ATTEMPTS**: one block per judge finding, shaped as:
    ```
