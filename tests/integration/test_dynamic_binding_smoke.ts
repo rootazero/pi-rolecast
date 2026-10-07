@@ -254,9 +254,9 @@ test("rolecast-status command renders OK lines for resolved roles", async () => 
 		// Sonnet 5-5 (medium reasoning) does NOT meet coding-architect's `requires.reasoning_tier: high`,
 		// so the chain walks past it to deepseek-flash — which is also medium. Then chain exhausts.
 		// Falls back to registry ranking; only gpt-6.1-sol (high reasoning + 128k) qualifies.
-		assert.match(body, /OK\s+coding-implementer\s+->\s+deepseek\/deepseek-flash/);
+		assert.match(body, /OK\s+coding-coder\s+->\s+deepseek\/deepseek-flash/);
 		assert.match(body, /OK\s+coding-canary\s+->\s+minimax\/minimax-m3/);
-		assert.match(body, /OK\s+coding-reviewer\s+->\s+openai\/gpt-6.1-sol/);
+		assert.match(body, /OK\s+coding-judge\s+->\s+openai\/gpt-6.1-sol/);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}

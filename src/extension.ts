@@ -43,6 +43,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import {
 	dumpBindings,
+	resolveLegacyRoleName,
 	type BindingPayload,
 	type DumpBindingsResult,
 } from "./dump_bindings.js";
@@ -871,10 +872,16 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 		if (event.toolName === "Agent") {
 			const subagentType = input.subagent_type;
 			if (typeof subagentType !== "string" || subagentType.length === 0) return;
-			const payload = bindingsCache.bindings[subagentType];
+			// v0.6.0: apply LEGACY_ROLE_ALIASES rewrite so legacy names
+			// (coding-implementer → coding-coder etc.) continue to resolve
+			// at dispatch time, even though the bindings cache now stores
+			// them under the new key.
+			const resolvedKey = resolveLegacyRoleName(subagentType, bindingsCache.bindings);
+			if (resolvedKey === null) return;
+			const payload = bindingsCache.bindings[resolvedKey];
 			if (!payload) return;
 			const registry = makeResolverRegistry(extCtx.modelRegistry);
-			const result = resolveForRole(subagentType, {
+			const result = resolveForRole(resolvedKey, {
 				binding: payload,
 				scopedModels: extCtx.scopedModels,
 				registry,
@@ -894,7 +901,7 @@ export default function piRolecastExtension(pi: ExtensionAPI): void {
 			}
 			// Record the dispatched role so subsequent tool calls inside
 			// this subagent can be checked against allowed_tools / seatbelt.
-			currentRole = subagentType;
+			currentRole = resolvedKey;
 			return;
 		}
 

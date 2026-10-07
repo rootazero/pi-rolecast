@@ -2,7 +2,7 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.6.0] — 2026-10-07
 
 ### ⚠ BREAKING CHANGES (opt-in via `legacy_role_aliases`)
 

@@ -18,6 +18,7 @@ import * as path from "node:path";
 import {
     availableRoles,
     findProfile,
+    LEGACY_ROLE_ALIASES,
     loadProfile,
     ProfileError,
     type Profile,
@@ -129,6 +130,35 @@ export function dumpBindings(opts: DumpBindingsOptions = {}): DumpBindingsResult
         role_groups: [...profile.workflow.role_groups],
         bindings,
     };
+}
+
+/**
+ * v0.6.0 — legacy-name lookup helper.
+ *
+ * Given a subagent_type string from the Agent tool and the current
+ * bindings cache, return the actual binding key to use. If `name` is
+ * already a current key, returns it unchanged. Otherwise consults
+ * `LEGACY_ROLE_ALIASES` to rewrite legacy names (coding-implementer
+ * → coding-coder, coding-reviewer → coding-judge, coding-docs →
+ * coding-diarist). Returns `null` when the name has no known binding
+ * (either truly unknown, or fully removed like coding-orchestrator).
+ *
+ * Recursion handles the (theoretical) case where a legacy alias points
+ * at another legacy alias. Bound by the size of LEGACY_ROLE_ALIASES.
+ */
+export function resolveLegacyRoleName(
+    name: string,
+    bindings: Record<string, BindingPayload>,
+): string | null {
+    if (Object.prototype.hasOwnProperty.call(bindings, name)) return name;
+    const alias = LEGACY_ROLE_ALIASES[name];
+    if (alias === undefined) return null;
+    if (alias === null) return null;
+    const target = alias[0];
+    if (target === undefined) return null;
+    if (Object.prototype.hasOwnProperty.call(bindings, target)) return target;
+    // Recurse in case a legacy alias points at another legacy alias.
+    return resolveLegacyRoleName(target, bindings);
 }
 
 /**

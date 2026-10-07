@@ -13,7 +13,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { dumpBindings } from "../../src/dump_bindings.js";
+import { dumpBindings, resolveLegacyRoleName } from "../../src/dump_bindings.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,4 +172,40 @@ test("dumpBindings: framework root with no rolecast.yaml anywhere returns empty"
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// v0.6.0 — legacy-name lookup helper
+// ─────────────────────────────────────────────────────────────────────
+
+const LEGACY_FIXTURE: Record<string, { alias: string; channels: string[]; fallback_chain: string[]; requires: Record<string, unknown>; preferences: Record<string, unknown> }> = {
+    "coding-coder":      { alias: "deepseek-verifiable", channels: ["official"], requires: {},          fallback_chain: [], preferences: {} },
+    "coding-judge":      { alias: "gpt-judgment-high",   channels: ["official"], requires: {},          fallback_chain: [], preferences: {} },
+    "coding-diarist":    { alias: "minimax-medium",      channels: ["official"], requires: {},          fallback_chain: [], preferences: {} },
+    "coding-architect":  { alias: "opus-thinking-medium", channels: ["official"], requires: {},         fallback_chain: [], preferences: {} },
+};
+
+test("resolveLegacyRoleName: current name returns unchanged", () => {
+    assertLib.equal(resolveLegacyRoleName("coding-coder", LEGACY_FIXTURE), "coding-coder");
+    assertLib.equal(resolveLegacyRoleName("coding-architect", LEGACY_FIXTURE), "coding-architect");
+});
+
+test("resolveLegacyRoleName: legacy name rewrites to current target", () => {
+    assertLib.equal(resolveLegacyRoleName("coding-implementer", LEGACY_FIXTURE), "coding-coder");
+    assertLib.equal(resolveLegacyRoleName("coding-reviewer",    LEGACY_FIXTURE), "coding-judge");
+    assertLib.equal(resolveLegacyRoleName("coding-docs",        LEGACY_FIXTURE), "coding-diarist");
+});
+
+test("resolveLegacyRoleName: fully removed legacy name returns null", () => {
+    // coding-orchestrator is in LEGACY_ROLE_ALIASES with null (removed).
+    assertLib.equal(resolveLegacyRoleName("coding-orchestrator", LEGACY_FIXTURE), null);
+});
+
+test("resolveLegacyRoleName: unknown name returns null", () => {
+    assertLib.equal(resolveLegacyRoleName("nonsense-role", LEGACY_FIXTURE), null);
+});
+
+test("resolveLegacyRoleName: empty bindings cache returns null even for legacy names", () => {
+    // No rewrite target exists in the cache — the legacy alias cannot resolve.
+    assertLib.equal(resolveLegacyRoleName("coding-implementer", {}), null);
 });
