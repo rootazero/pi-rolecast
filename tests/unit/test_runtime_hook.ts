@@ -186,3 +186,88 @@ test("enforceRoleNarrowing: empty allowed_tools list => block all non-Agent tool
     assert.ok(d, "empty allow list must block every tool call");
     assert.match(d?.reason ?? "", /Allowed tools: \(none\)/);
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.8.0 (F2) — runtime narrowing coverage tests.
+//
+// The runtime narrowing (A2/A5) is exercised through the pure helper
+// `enforceRoleNarrowing`, which is called by the tool_call hook in
+// src/extension.ts. The module-level `currentRole` state is private
+// (per extension.ts:474-483) so these tests document the contract
+// the helper honours, not the dispatch machinery.
+// ────────────────────────────────────────────────────────────────────
+
+test("F2: fresh session has unrestricted currentRole", () => {
+    // Before any Agent dispatch, the main session's tool calls are
+    // unrestricted. This is the v0.6.0 docstring at extension.ts:474-483
+    // ("The main session's own tool calls ... are unrestricted.").
+    const bindings = {
+        "coding-coder": mkBinding({ allowed_tools: ["bash"] }),
+    };
+    // currentRole === null  => the helper returns undefined regardless of
+    // the bindings cache contents.
+    const d = enforceRoleNarrowing(
+        { toolName: "bash", input: { command: "rm -rf /" } },
+        bindings,
+        null,
+    );
+    assert.equal(d, undefined, "fresh-session currentRole=null must allow any tool call");
+});
+
+test("F2: Agent dispatch sets currentRole to the dispatched subagent_type", () => {
+    // Once the dispatcher fires a subagent, the helper should consult
+    // that subagent's binding. We exercise the helper with
+    // currentRole = "coding-coder" and a binding that allows bash only,
+    // then verify a bash call is allowed and a read call is blocked.
+    const bindings = {
+        "coding-coder": mkBinding({ allowed_tools: ["bash"] }),
+        "coding-judge": mkBinding({ allowed_tools: ["read", "grep"] }),
+    };
+    // Same dispatcher writes currentRole = "coding-coder" after a
+    // successful Agent dispatch; the next tool call is checked here.
+    const bashD = enforceRoleNarrowing(
+        { toolName: "bash", input: { command: "ls -la" } },
+        bindings,
+        "coding-coder",
+    );
+    assert.equal(bashD, undefined, "bash must be allowed for coding-coder");
+
+    const readD = enforceRoleNarrowing(
+        { toolName: "read", input: { path: "/tmp/x" } },
+        bindings,
+        "coding-coder",
+    );
+    assert.ok(readD, "read must be blocked for coding-coder");
+    assert.match(readD?.reason ?? "", /not allowed to call tool 'read'/);
+});
+
+test("F2: sequential dispatches track the last one (parallel subagents share last role)", () => {
+    // The v0.6.0 docstring at extension.ts:474-483 documents this
+    // limitation explicitly: pi's extension API does not expose a
+    // subagent_end event, so two back-to-back Agent dispatches leave
+    // `currentRole` pointing at the second dispatched role. Parallel
+    // subagents within one main-session turn inherit the LAST
+    // dispatched role's restrictions.
+    const bindings = {
+        "coding-coder": mkBinding({ allowed_tools: ["bash"] }),
+        "coding-judge": mkBinding({ allowed_tools: ["read"] }),
+    };
+
+    // First dispatch: currentRole becomes coding-coder.
+    // Second dispatch: currentRole becomes coding-judge (overwrites).
+    const secondRole = "coding-judge";
+    const readD = enforceRoleNarrowing(
+        { toolName: "read", input: { path: "/tmp/x" } },
+        bindings,
+        secondRole,
+    );
+    assert.equal(readD, undefined, "last-dispatched role (coding-judge) allows read");
+
+    const bashD = enforceRoleNarrowing(
+        { toolName: "bash", input: { command: "ls" } },
+        bindings,
+        secondRole,
+    );
+    assert.ok(bashD, "last-dispatched role (coding-judge) blocks bash");
+    assert.match(bashD?.reason ?? "", /not allowed to call tool 'bash'/);
+});
