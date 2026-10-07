@@ -525,3 +525,126 @@ test("runGate: phases without audit_roles are unaffected (backward compatible)",
     }
 });
 
+// ───────────────────────────────────────────────────────────────────
+// v0.8.0 (F3) — audit dispatch surface integration
+// ───────────────────────────────────────────────────────────────────
+
+/** Write an audit-verdicts.json file into a run directory. */
+function writeAuditVerdicts(logDir: string, verdicts: unknown, phase?: string): void {
+    const payload = { phase: phase ?? "phase_a", verdicts };
+    fs.writeFileSync(path.join(logDir, "audit-verdicts.json"), JSON.stringify(payload), "utf8");
+}
+
+/**
+ * Pre-create the runGate runDir with a predicted timestamp so the test
+ * can drop an audit-verdicts.json file at the exact location the runner
+ * will read. Uses the exported `__testing.formatTimestamp` helper so
+ * the test stays in sync with the production format.
+ */
+async function prepareRunDirWithVerdicts(
+    logDir: string,
+    verdicts: unknown,
+    phase?: string,
+): Promise<string> {
+    const mod = (await import("../../src/gate_runner.js")) as {
+        __testing: { formatTimestamp: (d: Date) => string };
+    };
+    const ts = mod.__testing.formatTimestamp(new Date());
+    const runDir = path.join(logDir, ts);
+    fs.mkdirSync(runDir, { recursive: true });
+    writeAuditVerdicts(runDir, verdicts, phase);
+    return runDir;
+}
+
+test("F3 runGate: declares audit_required + audit_plan when audit_roles is non-empty", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect", "coding-planner"] },
+        }));
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.audit_required, true, "phase must declare audit_required=true");
+        assertLib.ok(ph?.audit_plan);
+        assertLib.equal(ph?.audit_plan?.length, 2);
+        const judge = ph?.audit_plan?.find((d) => d.role === "coding-architect");
+        assertLib.ok(judge, "audit_plan must include coding-architect");
+        assertLib.equal(judge?.alias, "opus-thinking-medium");
+        assertLib.equal(judge?.channel_id, "official");
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+test("F3 runGate: approved audit verdict lets a passing phase pass", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect"] },
+        }));
+        await prepareRunDirWithVerdicts(logDir, [
+            { role: "coding-architect", verdict: "approved" },
+        ]);
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.status, "pass");
+        assertLib.equal(ph?.audit_verdict, "approved");
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+test("F3 runGate: needs_rework audit verdict short-circuits the phase to fail", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect"] },
+        }));
+        await prepareRunDirWithVerdicts(logDir, [
+            { role: "coding-architect", verdict: "needs_rework", reason: "missing tests" },
+        ]);
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        assertLib.equal(r.ok, false);
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.status, "fail");
+        assertLib.equal(ph?.audit_verdict, "needs_rework");
+        assertLib.match(ph?.reason ?? "", /audit:needs_rework/);
+        assertLib.equal(ph?.attempts, 0, "needs_rework must short-circuit before commands run");
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+
+test("F3 runGate: rejected audit verdict short-circuits with rejected summary", async () => {
+    const tmp = makeTempDir();
+    const logDir = makeTempDir();
+    try {
+        const profilePath = writeProfile(tmp, profileYaml({
+            phases: { phase_a: { commands: ["true"], timeout: 10 } },
+            auditRoles: { phase_a: ["coding-architect", "coding-planner"] },
+        }));
+        await prepareRunDirWithVerdicts(logDir, [
+            { role: "coding-architect", verdict: "approved" },
+            { role: "coding-planner", verdict: "rejected", reason: "scope creep" },
+        ]);
+        const r = await runGate({ ...baseOpts(profilePath, { logDir }) });
+        assertLib.equal(r.ok, false);
+        const ph = r.summary.phases[0];
+        assertLib.ok(ph);
+        assertLib.equal(ph?.status, "fail");
+        assertLib.equal(ph?.audit_verdict, "rejected");
+        assertLib.match(ph?.reason ?? "", /audit:rejected/);
+    } finally {
+        cleanup(tmp, logDir);
+    }
+});
+

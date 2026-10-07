@@ -19,6 +19,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { loadProfile, ProfileError } from "./profile_loader.js";
+import {
+    type AuditDispatch,
+    type AuditVerdictSummary,
+    readAuditVerdicts,
+    resolveAuditDispatchPlan,
+    summarizeAuditVerdicts,
+} from "./audit_workflow.js";
 
 // ─────────────────────────────────────────────────────────────────────
 // Public types
@@ -62,6 +69,30 @@ export interface PhaseResult {
      */
     audit_roles?: string[];
     audit_unresolved?: string[];
+    /**
+     * v0.8.0 (F3) — True iff the phase declared `audit_roles`. Surfaced
+     * so the workflow orchestrator can decide whether to dispatch the
+     * audit team before re-running the gate. Distinct from
+     * `audit_unresolved` (typo safety) — `audit_required` is the
+     * declaration surface, not the resolution surface.
+     */
+    audit_required?: boolean;
+    /**
+     * v0.8.0 (F3) — the dispatch plan the workflow should use to invoke
+     * the audit team (one entry per resolved audit_role). Populated
+     * whenever `audit_roles` is non-empty so the workflow does not have
+     * to call `resolveAuditDispatchPlan` separately.
+     */
+    audit_plan?: AuditDispatch[];
+    /**
+     * v0.8.0 (F3) — audit verdict summary derived from the persisted
+     * `<runDir>/audit-verdicts.json` file (if present). "approved"
+     * means the workflow cleared this phase; "needs_rework" means a
+     * resubmit is in order; "rejected" / "cap_exhausted" mean permanent
+     * failure. Absent means no verdict file was written (audit was
+     * advisory or skipped).
+     */
+    audit_verdict?: AuditVerdictSummary;
 }
 
 export interface GateSummary {
@@ -205,6 +236,54 @@ async function runPhase(
     const maxAttempts = Math.max(1, profile.escalation.max_attempts);
     const started = Date.now();
 
+    // v0.8.0 (F3) — audit verdict pre-check. The workflow orchestrator
+    // writes `<runDir>/audit-verdicts.json` after dispatching the audit
+    // team; the gate runner reads it BEFORE attempting commands so an
+    // advisory audit can short-circuit the phase with a structured
+    // reason. Per ADR-0007 the gate does NOT retry automatically; the
+    // workflow owns the resubmit loop.
+    const auditVerdictsFile = readAuditVerdicts(runDir);
+    const auditVerdictSummary: AuditVerdictSummary | undefined =
+        auditVerdictsFile ? summarizeAuditVerdicts(auditVerdictsFile.verdicts) : undefined;
+    const auditPlan = auditRoles.length > 0
+        ? resolveAuditDispatchPlan(
+            {
+                gates: profile.gates as Record<string, { audit_roles?: string[] | undefined }>,
+                resolved_bindings: (profile.resolved_bindings ?? {}) as Record<string, import("./profile_loader.js").ResolvedBinding>,
+            },
+            phaseName,
+        )
+        : null;
+    const auditRequired = auditRoles.length > 0;
+    const unresolvedAuditRoles = auditRoles.length > 0
+        ? resolveAuditRoles(auditRoles, profile.resolved_bindings)
+        : [];
+    const baseAuditFields = {
+        audit_roles: auditRoles.length > 0 ? auditRoles : undefined,
+        audit_unresolved: auditRoles.length > 0 ? unresolvedAuditRoles : undefined,
+        audit_required: auditRequired ? true : undefined,
+        audit_plan: auditPlan && auditPlan.dispatch.length > 0 ? auditPlan.dispatch : undefined,
+        audit_verdict: auditVerdictSummary,
+    };
+
+    if (auditVerdictSummary === "rejected" || auditVerdictSummary === "needs_rework") {
+        // Short-circuit before running commands: the audit verdict
+        // alone is sufficient to fail this phase. The reason field
+        // carries the verdict summary so the workflow can branch on it.
+        return {
+            result: {
+                name: phaseName,
+                status: "fail",
+                reason: `audit:${auditVerdictSummary}`,
+                attempts: 0,
+                duration_s: round2((Date.now() - started) / 1000),
+                log_dir: runDir,
+                ...baseAuditFields,
+            },
+            errorTail: `audit verdict: ${auditVerdictSummary}`,
+        };
+    }
+
     let lastFailure: PhaseResult["last_failure"] | undefined;
     let errorTail = "";
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -216,6 +295,7 @@ async function runPhase(
                     reason: "aborted",
                     attempts: attempt - 1,
                     duration_s: round2((Date.now() - started) / 1000),
+                    ...baseAuditFields,
                 },
                 errorTail,
             };
@@ -238,6 +318,9 @@ async function runPhase(
                         log: logPath,
                         audit_roles: auditRoles,
                         audit_unresolved: unresolved,
+                        audit_required: auditRequired ? true : undefined,
+                        audit_plan: auditPlan && auditPlan.dispatch.length > 0 ? auditPlan.dispatch : undefined,
+                        audit_verdict: auditVerdictSummary,
                         last_failure: {
                             attempt,
                             returncode: r.rc,
@@ -255,8 +338,7 @@ async function runPhase(
                     attempts: attempt,
                     duration_s: round2((Date.now() - started) / 1000),
                     log: logPath,
-                    audit_roles: auditRoles.length > 0 ? auditRoles : undefined,
-                    audit_unresolved: auditRoles.length > 0 ? [] : undefined,
+                    ...baseAuditFields,
                 },
                 errorTail,
             };
@@ -277,8 +359,7 @@ async function runPhase(
             duration_s: round2((Date.now() - started) / 1000),
             log_dir: runDir,
             last_failure: lastFailure,
-            audit_roles: auditRoles.length > 0 ? auditRoles : undefined,
-            audit_unresolved: resolveAuditRoles(auditRoles, profile.resolved_bindings),
+            ...baseAuditFields,
         },
         errorTail,
     };

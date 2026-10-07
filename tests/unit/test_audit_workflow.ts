@@ -360,3 +360,171 @@ test("incrementAuditCounter: written JSON parses with audit_attempt key", () => 
         fs.rmSync(dir, { recursive: true, force: true });
     }
 });
+
+// ───────────────────────────────────────────────────────────────────
+// v0.8.0 (F3) — audit dispatch helpers
+// ───────────────────────────────────────────────────────────────────
+
+import {
+    recordAuditVerdict,
+    readAuditVerdicts,
+    resolveAuditDispatchPlan,
+    summarizeAuditVerdicts,
+    type AuditDispatch,
+    type AuditVerdict,
+    type ResolvedBinding,
+} from "../../src/audit_workflow.js";
+
+function makeResolvedBinding(
+    role: string,
+    overrides: Partial<ResolvedBinding> = {},
+): ResolvedBinding {
+    return {
+        role,
+        alias: "sonnet",
+        model_id: "anthropic/claude-sonnet",
+        channel_id: "anthropic",
+        trust: "trusted",
+        warning: null,
+        via_fallback: false,
+        ...overrides,
+    };
+}
+
+test("F3 resolveAuditDispatchPlan: happy path returns one entry per resolved audit_role", () => {
+    const profile = {
+        gates: {
+            review: {
+                audit_roles: ["coding-judge", "coding-countersign"],
+            },
+        },
+        resolved_bindings: {
+            "coding-judge": makeResolvedBinding("coding-judge", { alias: "opus" }),
+            "coding-countersign": makeResolvedBinding("coding-countersign"),
+        },
+    };
+    const plan = resolveAuditDispatchPlan(profile, "review");
+    assert.equal(plan.phase, "review");
+    assert.equal(plan.dispatch.length, 2);
+    assert.equal(plan.unresolved.length, 0);
+    const judge = plan.dispatch.find((d) => d.role === "coding-judge");
+    assert.ok(judge);
+    assert.equal(judge?.alias, "opus");
+    assert.equal(judge?.model_id, "anthropic/claude-sonnet");
+});
+
+test("F3 resolveAuditDispatchPlan: unresolved roles surface separately from dispatch", () => {
+    const profile = {
+        gates: {
+            review: {
+                audit_roles: ["coding-judge", "coding-notary", "coding-secretariat"],
+            },
+        },
+        resolved_bindings: {
+            "coding-judge": makeResolvedBinding("coding-judge"),
+            // coding-notary + coding-secretariat deliberately omitted
+        },
+    };
+    const plan = resolveAuditDispatchPlan(profile, "review");
+    assert.equal(plan.dispatch.length, 1);
+    assert.equal(plan.dispatch[0]?.role, "coding-judge");
+    assert.deepEqual(plan.unresolved, ["coding-notary", "coding-secretariat"]);
+});
+
+test("F3 resolveAuditDispatchPlan: missing phase yields empty plan", () => {
+    const profile = {
+        gates: {
+            review: { audit_roles: ["coding-judge"] },
+        },
+        resolved_bindings: {
+            "coding-judge": makeResolvedBinding("coding-judge"),
+        },
+    };
+    const plan = resolveAuditDispatchPlan(profile, "ship");
+    assert.equal(plan.phase, "ship");
+    assert.equal(plan.dispatch.length, 0);
+    assert.equal(plan.unresolved.length, 0);
+});
+
+test("F3 recordAuditVerdict: approved does not increment the counter", () => {
+    const dir = makeTempDir();
+    try {
+        const esc = makeEscalation({ audit_max_resubmits: 3 });
+        const r = recordAuditVerdict(dir, "coding-judge", "approved", esc);
+        assert.equal(r.attempt, 0);
+        assert.equal(r.capReached, false);
+        assert.equal(readAuditCounter(dir), 0);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("F3 recordAuditVerdict: needs_rework increments and reports capReached=false while under cap", () => {
+    const dir = makeTempDir();
+    try {
+        const esc = makeEscalation({ audit_max_resubmits: 3 });
+        const r1 = recordAuditVerdict(dir, "coding-judge", "needs_rework", esc);
+        assert.equal(r1.attempt, 1);
+        assert.equal(r1.capReached, false);
+        const r2 = recordAuditVerdict(dir, "coding-judge", "needs_rework", esc);
+        assert.equal(r2.attempt, 2);
+        assert.equal(r2.capReached, false);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("F3 recordAuditVerdict: cap reached when increment meets the limit", () => {
+    const dir = makeTempDir();
+    try {
+        const esc = makeEscalation({ audit_max_resubmits: 2 });
+        recordAuditVerdict(dir, "coding-judge", "needs_rework", esc);
+        const r = recordAuditVerdict(dir, "coding-judge", "needs_rework", esc);
+        assert.equal(r.attempt, 2);
+        assert.equal(r.capReached, true, "attempt 2 of cap 2 must report capReached");
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("F3 readAuditVerdicts + summarizeAuditVerdicts: rejects takes priority over needs_rework", () => {
+    const dir = makeTempDir();
+    try {
+        const payload = {
+            phase: "review",
+            verdicts: [
+                { role: "coding-judge", verdict: "needs_rework" as AuditVerdict },
+                { role: "coding-countersign", verdict: "rejected" as AuditVerdict },
+            ],
+        };
+        fs.writeFileSync(path.join(dir, "audit-verdicts.json"), JSON.stringify(payload), "utf8");
+        const file = readAuditVerdicts(dir);
+        assert.ok(file);
+        assert.equal(summarizeAuditVerdicts(file.verdicts), "rejected");
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("F3 readAuditVerdicts: missing file returns null, malformed file returns null with stderr warning", () => {
+    const dir = makeTempDir();
+    try {
+        assert.equal(readAuditVerdicts(dir), null, "missing file → null");
+        // Silence the expected stderr warning from the malformed case.
+        const origStderr = process.stderr.write.bind(process.stderr);
+        let captured = "";
+        (process.stderr as unknown as { write: (s: string) => boolean }).write = (s: string) => {
+            captured += s;
+            return true;
+        };
+        try {
+            fs.writeFileSync(path.join(dir, "audit-verdicts.json"), "{not json", "utf8");
+            assert.equal(readAuditVerdicts(dir), null);
+            assert.match(captured, /malformed audit-verdicts\.json/);
+        } finally {
+            process.stderr.write = origStderr;
+        }
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
