@@ -255,6 +255,71 @@ test("writeAgents: dry-run writes nothing", () => {
     }
 });
 
+test("writeAgents: dry-run emits missing-soul warning without writing", () => {
+    // v0.9.0 (T1.5): dry-run must walk the soul-preload code path so a
+    // broken `soul:` path surfaces as a warning, even when no file is
+    // written. Set up a tmp framework root with a role-pack that points
+    // at a non-existent soul, override the role, and assert that:
+    //   (a) the missing-soul warning is emitted on stderr
+    //   (b) result.written === 0
+    //   (c) nothing is written to agentsDir (no fs.writeFileSync side effect)
+    const tmp = makeTempDir();
+    try {
+        const codingDir = path.join(tmp, "role-packs", "coding");
+        fs.mkdirSync(codingDir, { recursive: true });
+        const rolePath = path.join(codingDir, "coding-broken-soul.md");
+        fs.writeFileSync(rolePath, [
+            "---",
+            "name: coding-broken-soul",
+            "soul: ../../souls/does-not-exist.md",
+            "---",
+            "",
+            "# body",
+        ].join("\n"));
+
+        const agentsDir = path.join(tmp, "agents");
+
+        // Capture process.stderr.write while writeAgents runs.
+        const origWrite = process.stderr.write.bind(process.stderr);
+        let captured = "";
+        (process.stderr as { write: typeof process.stderr.write }).write = ((
+            chunk: string | Uint8Array,
+            ...rest: unknown[]
+        ) => {
+            captured += typeof chunk === "string" ? chunk : chunk.toString();
+            return origWrite(chunk as string, ...(rest as []));
+        }) as typeof process.stderr.write;
+
+        let result: ReturnType<typeof writeAgents>;
+        try {
+            result = writeAgents({
+                agentsDir,
+                frameworkRoot: tmp,
+                enabledGroups: ["coding"],
+                overrides: {
+                    "coding-broken-soul": { model: "deepseek-v4.1-flash", channel: "official" },
+                },
+                dryRun: true,
+                registry: tryLoadRegistry(FRAMEWORK_ROOT),
+            });
+        } finally {
+            (process.stderr as { write: typeof process.stderr.write }).write = origWrite;
+        }
+
+        // (a) warning surfaces in dry-run
+        assertLib.match(
+            captured,
+            /warning: role 'coding-broken-soul' declares soul '..\/..\/souls\/does-not-exist\.md' but the file is missing/,
+        );
+        // (b) no write counter increment
+        assertLib.equal(result.written, 0);
+        // (c) agentsDir was never created, no .md was emitted
+        assertLib.equal(fs.existsSync(agentsDir), false);
+    } finally {
+        cleanup(tmp);
+    }
+});
+
 test("clearAgents: removes .md files", () => {
     const tmp = makeTempDir();
     try {

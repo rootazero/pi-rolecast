@@ -341,11 +341,6 @@ export function writeAgents(opts: {
         const provider = providerForModel(modelId, opts.registry);
         const full = provider !== "" ? `${provider}/${modelId}` : modelId;
         const dst = path.join(opts.agentsDir, `${fullName}.md`);
-        if (opts.dryRun) {
-            process.stdout.write(`would write ${dst} model=${full}\n`);
-            perRole[fullName] = { model: full, provider };
-            continue;
-        }
         const src = rd.file_path;
         if (src === null || !fs.existsSync(src)) {
             process.stderr.write(`warning: role-packs file not found: ${rd.file_path}\n`);
@@ -355,6 +350,11 @@ export function writeAgents(opts: {
         // v0.6.0 (A3): if the role declares a `soul:` path, load and prepend
         // it. The soul content is treated as the "generic law" overlay per
         // ADR-0005; the role body becomes the "host overlay" (more specific).
+        // v0.9.0 (T1.5): body prep runs in BOTH dry-run and real-run so that
+        // any missing-soul warning (and any other prep-time warning) surfaces
+        // even when we are not writing. The dry-run branch only suppresses the
+        // actual fs.writeFileSync below; it does NOT short-circuit soul
+        // resolution.
         const soulPrepend = loadSoulPrepend(rd, src);
         const withSoul = soulPrepend === null ? rawBody : prependSoul(rawBody, soulPrepend);
         // v0.6.0 (A2): if the role declares allowed_tools, append a
@@ -364,6 +364,11 @@ export function writeAgents(opts: {
         // a Bash-seatbelt block (literal substrings per ADR-0008).
         const withSeatbelt = appendBashSeatbelt(withTools, rd.forbidden_bash_patterns);
         const updated = setFrontmatterField(withSeatbelt, "model", full);
+        if (opts.dryRun) {
+            process.stdout.write(`would write ${dst} model=${full}\n`);
+            perRole[fullName] = { model: full, provider };
+            continue;
+        }
         fs.mkdirSync(opts.agentsDir, { recursive: true });
         fs.writeFileSync(dst, updated);
         written++;
