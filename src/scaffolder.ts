@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { dump as yamlDump, load as yamlLoad } from "js-yaml";
 
-import { loadProfile, ProfileError } from "./profile_loader.js";
+import { loadProfile, ProfileError, type Escalation } from "./profile_loader.js";
 import { validateAllContracts } from "./contracts.js";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -289,6 +289,25 @@ function flattenKeys(d: Record<string, unknown>, prefix = ""): string[] {
     return out;
 }
 
+/**
+ * v0.7.0 (E1) — compact one-line summary of the Escalation config for
+ * `validateProfile` output. Distinguishes "declared with a finite cap"
+ * from "declared as unbounded (null)" so callers can audit the
+ * constraint surface at a glance.
+ */
+function formatEscalationLine(es: Escalation): string {
+    const fmt = (label: string, v: number | null, defaultNote?: string): string => {
+        if (v === null) return `${label}=${defaultNote ?? "unbounded"}`;
+        return `${label}=${v}`;
+    };
+    return `  escalation: max_attempts=${es.max_attempts}, ` +
+        `${fmt("gate_max_attempts", es.gate_max_attempts)}, ` +
+        `${fmt("audit_max_resubmits", es.audit_max_resubmits, "unbounded (ADR-0007 default)")}, ` +
+        `${fmt("non_negotiable_max_retries", es.non_negotiable_max_retries)}, ` +
+        `on_permanent_failure=${es.on_permanent_failure}, ` +
+        `preserve_logs=${es.preserve_logs}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // validate subcommand (spec §9.5)
 // ─────────────────────────────────────────────────────────────────────
@@ -330,11 +349,7 @@ export function validateProfile(opts: ValidateProfileOptions): ValidateProfileRe
         if (profile.contracts && Object.keys(profile.contracts).length > 0) {
             lines.push(`  contracts declared: ${Object.keys(profile.contracts).length}`);
         }
-        if (profile.escalation.audit_max_resubmits !== null) {
-            lines.push(`  escalation.audit_max_resubmits: ${profile.escalation.audit_max_resubmits}`);
-        } else {
-            lines.push(`  escalation.audit_max_resubmits: unbounded (ADR-0007 default)`);
-        }
+        lines.push(formatEscalationLine(profile.escalation));
         const warnings: string[] = [];
         // Load-time warnings (LEGACY_ROLE_ALIASES rewrites, etc.).
         for (const w of profile.load_warnings) warnings.push(w);

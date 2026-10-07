@@ -105,6 +105,21 @@ export interface Escalation {
      * number aborts the audit gate after that many rejected resubmissions.
      */
     audit_max_resubmits: number | null;
+    /**
+     * v0.7.0 (E1.1) — session-level gate-attempt ceiling. Distinct from the
+     * per-phase `PhaseDef.max_attempts` knob: this caps the total number of
+     * attempts the gate runner will run *across all phases* before declaring
+     * the gate failed. `null` (default) = unbounded.
+     */
+    gate_max_attempts: number | null;
+    /**
+     * v0.7.0 (E1.2) — cap on consecutive non_negotiable violations before the
+     * gate runner hard-fails. Each phase result reports its non-negotiable
+     * violation count; when the cumulative count across the gate run
+     * reaches this cap, the runner fails immediately. `null` (default) =
+     * unbounded.
+     */
+    non_negotiable_max_retries: number | null;
 }
 
 export interface RoleDef {
@@ -690,22 +705,30 @@ function parseEscalation(raw: unknown): Escalation {
     if (opf !== "stop" && opf !== "continue") {
         throw new ProfileError("escalation.on_permanent_failure must be 'stop' or 'continue'");
     }
-    let auditMax: number | null = null;
-    if ("audit_max_resubmits" in obj && obj["audit_max_resubmits"] !== null) {
-        const v = obj["audit_max_resubmits"];
-        if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
-            throw new ProfileError(
-                "escalation.audit_max_resubmits must be a non-negative integer or null",
-            );
-        }
-        auditMax = v;
-    }
     return {
-        max_attempts: typeof obj["max_attempts"] === "number" ? obj["max_attempts"] : 2,
+        max_attempts: parseNonNegIntOrNull(obj["max_attempts"], "escalation.max_attempts") ?? 2,
         on_permanent_failure: opf,
         preserve_logs: obj["preserve_logs"] === undefined ? true : Boolean(obj["preserve_logs"]),
-        audit_max_resubmits: auditMax,
+        audit_max_resubmits: parseNonNegIntOrNull(obj["audit_max_resubmits"], "escalation.audit_max_resubmits"),
+        gate_max_attempts: parseNonNegIntOrNull(obj["gate_max_attempts"], "escalation.gate_max_attempts"),
+        non_negotiable_max_retries: parseNonNegIntOrNull(obj["non_negotiable_max_retries"], "escalation.non_negotiable_max_retries"),
     };
+}
+
+/**
+ * v0.7.0 (E1.3) — strict non-negative-integer-or-null validator for all
+ * numeric Escalation knobs. `null` is permitted (means "unbounded").
+ * Anything else (negative, non-integer, wrong type) throws ProfileError
+ * with the dotted field path so the user can find the bad value.
+ */
+function parseNonNegIntOrNull(raw: unknown, fieldPath: string): number | null {
+    if (raw === undefined || raw === null) return null;
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+        throw new ProfileError(
+            `${fieldPath} must be a non-negative integer or null`,
+        );
+    }
+    return raw;
 }
 
 // ─────────────────────────────────────────────────────────────────────

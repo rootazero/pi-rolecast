@@ -793,3 +793,259 @@ testApi("v0.6.0: contracts field rejects non-mapping", () => {
     assert.throws(() => loadProfile(profilePath, PROJECT_ROOT), /contracts/);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// v0.7.0 (E1) — parseEscalation validator hardening
+// ─────────────────────────────────────────────────────────────────────
+
+testApi("v0.7.0: gate_max_attempts default is null (unbounded)", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-default
+        description: gate_max_attempts defaults to null
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.gate_max_attempts, null);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: gate_max_attempts parses explicit non-negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-capped
+        description: gate_max_attempts 5
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          gate_max_attempts: 5
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.gate_max_attempts, 5);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: gate_max_attempts rejects negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-negative
+        description: gate_max_attempts -1
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          gate_max_attempts: -1
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /gate_max_attempts/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: gate_max_attempts rejects non-integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-nonint
+        description: gate_max_attempts 2.5
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          gate_max_attempts: 2.5
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /gate_max_attempts/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: gate_max_attempts rejects non-number", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-string
+        description: gate_max_attempts unbounded-string
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          gate_max_attempts: "unbounded"
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /gate_max_attempts/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: gate_max_attempts accepts null literal", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: gate-null
+        description: gate_max_attempts null literal
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          gate_max_attempts: null
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.gate_max_attempts, null);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: non_negotiable_max_retries default is null (unbounded)", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: nnmr-default
+        description: non_negotiable_max_retries defaults to null
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.non_negotiable_max_retries, null);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: non_negotiable_max_retries parses explicit non-negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: nnmr-capped
+        description: non_negotiable_max_retries 7
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          non_negotiable_max_retries: 7
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.non_negotiable_max_retries, 7);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: non_negotiable_max_retries rejects negative integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: nnmr-negative
+        description: non_negotiable_max_retries -3
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          non_negotiable_max_retries: -3
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /non_negotiable_max_retries/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: non_negotiable_max_retries rejects non-integer", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: nnmr-nonint
+        description: non_negotiable_max_retries 1.7
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          non_negotiable_max_retries: 1.7
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /non_negotiable_max_retries/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: max_attempts now strictly typed (rejects non-integer)", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: ma-nonint
+        description: max_attempts 1.5
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: 1.5
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /max_attempts/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: max_attempts now strictly typed (rejects negative)", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: ma-negative
+        description: max_attempts -2
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: -2
+    `);
+    assert.throws(
+        () => loadProfile(profilePath, PROJECT_ROOT),
+        /max_attempts/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+testApi("v0.7.0: all four escalation numeric knobs coexist cleanly", () => {
+    const dir = makeTempDir();
+    const profilePath = writeProfile(dir, `
+        framework_version: 0.5.0
+        name: all-knobs
+        description: all four numeric knobs at once
+        workflow:
+          role_groups: [coding]
+        bindings:
+          coding-architect: {alias: opus-thinking-medium, channels: [official]}
+        escalation:
+          max_attempts: 3
+          gate_max_attempts: 6
+          audit_max_resubmits: 2
+          non_negotiable_max_retries: 1
+          on_permanent_failure: stop
+          preserve_logs: true
+    `);
+    const profile = loadProfile(profilePath, PROJECT_ROOT);
+    assert.equal(profile.escalation.max_attempts, 3);
+    assert.equal(profile.escalation.gate_max_attempts, 6);
+    assert.equal(profile.escalation.audit_max_resubmits, 2);
+    assert.equal(profile.escalation.non_negotiable_max_retries, 1);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
