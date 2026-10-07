@@ -1,10 +1,11 @@
 # Pre-fill for Go projects. Edit fields to match your toolchain.
 #
-# v0.6.0: bindings use the new active role names. The legacy aliases
-# (coding-implementer / coding-reviewer / coding-docs / coding-orchestrator)
-# are rewritten automatically by LEGACY_ROLE_ALIASES with a DEPRECATED or
-# REMOVED warning, so older profiles keep loading without edits. New
-# profiles should use the names below.
+# v0.7.0: bindings use the new active role names. LEGACY_ROLE_ALIASES was
+# removed in v0.7.0, so old names (coding-implementer / coding-reviewer /
+# coding-docs / coding-orchestrator) now hard-fail with a clear migration
+# hint. Profiles still on v0.6.0 names must rename or remove the entry
+# before upgrading. See references/profile-schema.md for the migration
+# guide.
 #
 # The audit triad (countersign / notary / secretariat) is OPT-IN — keep it
 # commented out unless you want strict two-pair-of-eyes governance. The

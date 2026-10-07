@@ -2,6 +2,42 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] — 2026-10-08
+
+### ⚠ BREAKING CHANGES
+
+- **`LEGACY_ROLE_ALIASES` rewrite shim removed.** Profiles that still declare bindings or contracts under `coding-implementer`, `coding-reviewer`, `coding-docs`, or `coding-orchestrator` now hard-fail at load time with a `ProfileError` that names the successor role (or `REMOVED` for `coding-orchestrator`). See [Migration guide (v0.6.0 → v0.7.0)](references/profile-schema.md#migration-guide-v060--v070) in the schema reference.
+- **All four `Escalation` numeric knobs now strictly typed.** `max_attempts`, `gate_max_attempts`, `audit_max_resubmits`, and `non_negotiable_max_retries` accept only non-negative integers or the literal `null` (unbounded). Fractional or negative values throw `ProfileError` at load time.
+
+### Added (E1 — `Escalation` validator hardening)
+
+- **`Escalation.gate_max_attempts`** (number-or-null, default `null` = unbounded). Session-level gate-runner retry cap summed across all phases.
+- **`Escalation.non_negotiable_max_retries`** (number-or-null, default `null` = unbounded). Cap on retries triggered by non-negotiable violations.
+- **`parseNonNegIntOrNull(raw, fieldPath)`** in `src/profile_loader.ts`. Shared validator used by all four numeric knobs; throws `ProfileError` with the dotted field path on negative/decimal/non-number.
+- **`formatEscalationLine`** helper in `src/scaffolder.ts`. `validateProfile` now prints a compact one-line summary of all six `Escalation` knobs.
+
+### Added (E2 — `audit_workflow.ts` runtime helpers)
+
+- **`src/audit_workflow.ts`** — pure-function surface for workflow callers that need to honor `escalation.audit_max_resubmits`. Exports:
+  * `readAuditCounter(logDir)` → `number` (0 on missing/bad file).
+  * `incrementAuditCounter(logDir)` → `number` (post-increment; writes count + to read).
+  * `canResubmit(escalation, logDir)` → `{ allowed, attempt, max, remaining }` (pure read).
+  * `resetAuditCounter(logDir)` → `void` (no-op when file missing).
+- Persistence is `logDir/counters/audit-counter.json` holding `{ "audit_attempt": number }`. Atomic writes use tmp + rename so concurrent readers never see a partial JSON document.
+- `tests/unit/test_audit_workflow.ts` — 22 tests covering read/increment/canResubmit/reset plus integration (workflow-style loop) and atomic-write invariants (no .tmp leftovers, parses `audit_attempt` key).
+
+### Removed (E3 — `LEGACY_ROLE_ALIASES` shim)
+
+- **`LEGACY_ROLE_ALIASES` table removed.** Profiles declaring the four v0.6.0-era role names now fail at load time via `parseBindings` (bindings) and the new contract-loading branch (contracts). Migration hints point at `coding-coder`, `coding-judge`, `coding-diarist`, or `REMOVED` for `coding-orchestrator`.
+- **`parseBindingsWithLegacyRewrite` removed.** `parseBindings` consults the rules now.
+- **`resolveLegacyRoleName` removed** from `src/dump_bindings.ts`. The runtime dispatcher (`src/extension.ts`) consults `LEGACY_ROLE_REDIRECTS` directly to surface the same migration hint at dispatch time when an `@coding-implementer` at-handle reaches the extension.
+- **Four legacy role-pack files ship on disk for one release** with `deprecated_redirect` in frontmatter (skip-at-discovery flag). v0.8.x will delete them outright.
+- `coding-reviewer.md` had been missing `deprecated_redirect` — added `coding-judge` so the legacy skip path is uniform across all four files.
+
+### Fixed
+
+- **E1 `Escalation.max_attempts`** previously accepted fractional/negative values via the loose `typeof === "number"` check; v0.7.0 routes it through `parseNonNegIntOrNull` for symmetry with the other three knobs.
+
 ## [0.6.0] — 2026-10-07
 
 ### ⚠ BREAKING CHANGES (opt-in via `legacy_role_aliases`)
