@@ -1,0 +1,91 @@
+framework_version: 0.2.0
+name: my-ts-project
+description: |
+  Workflow for a TypeScript project.
+workflow:
+  role_groups:
+    - coding
+gates:
+  compile:
+    commands:
+      - npx tsc --noEmit
+    timeout: 300
+  lint:
+    commands:
+      - npx eslint .
+    timeout: 300
+  test:
+    commands:
+      - npx jest
+    timeout: 900
+bindings:
+  coding-architect:
+    alias: opus-thinking-medium
+    channels:
+      - official
+  coding-countersign:
+    alias: opus-thinking-medium
+    channels:
+      - official
+  coding-doctor:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-inspector:
+    alias: opus-thinking-high
+    channels:
+      - official
+  # NOTE: coding-objector binding follows below (renamed from coding-countersign
+  # per T4; this profile never bound the old name, so this is a fresh binding).
+  coding-planner:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-coder:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-tester:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-judge:
+    alias: gpt-judgment-high
+    channels:
+      - official
+      - relay-default
+  coding-mapper:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-profiler:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-auditor:
+    alias: opus-thinking-high
+    channels:
+      - official
+  coding-canary:
+    alias: minimax-fast
+    channels:
+      - official
+  coding-diarist:
+    alias: deepseek-verifiable
+    channels:
+      - official
+  coding-objector:
+    alias: gpt-judgment-high
+    channels:
+      - official
+      - relay-default
+non_negotiables:
+  forbidden_patterns:
+    - pattern: '@ts-ignore'
+      message: no @ts-ignore — fix the type or refactor
+    - pattern: as any
+      message: no `as any` — narrow the type instead
+escalation:
+  max_attempts: 2
+  on_permanent_failure: stop
+  preserve_logs: true

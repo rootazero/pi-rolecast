@@ -157,24 +157,66 @@ restructure dispatch, then upgrade the resolver.
 
 ---
 
-## Reference: tier assignments for the 11 shipped roles
+## Reference: tier assignments for the 17 shipped roles
 
-| Role                       | Tier       | model_recommendation     | Output category      |
-| -------------------------- | ---------- | ------------------------ | -------------------- |
-| `coding-architect`         | `strong`   | `opus-thinking-medium`   | Judgement            |
-| `coding-auditor`           | `strong`   | `opus-thinking-high`     | Judgement            |
-| `coding-orchestrator`      | `strong`   | `gpt-judgment-medium`    | Dispatch (always-on) |
-| `coding-reviewer`          | `strong`   | `gpt-judgment-high`      | Judgement            |
-| `coding-implementer`      | `balanced` | `deepseek-verifiable`    | Verifiable (gates)   |
-| `coding-mapper`            | `balanced` | `deepseek-verifiable`    | Verifiable (read)    |
-| `coding-planner`           | `balanced` | `deepseek-verifiable`    | Verifiable (verify)  |
-| `coding-profiler`          | `balanced` | `deepseek-verifiable`    | Verifiable (re-run)  |
-| `coding-tester`            | `balanced` | `deepseek-verifiable`    | Verifiable (gates)   |
-| `coding-canary`            | `cheap`    | `minimax-fast`           | Meta (routing)       |
-| `coding-docs`              | `cheap`    | `minimax-medium`         | Generation           |
+| Role                       | Tier       | Recommended alias      | One-line scope                                              |
+| -------------------------- | ---------- | ---------------------- | ----------------------------------------------------------- |
+| `coding-architect`         | `strong`   | `opus-thinking-medium` | System boundary + public API design                         |
+| `coding-auditor`           | `strong`   | `opus-thinking-high`   | Security + cross-cutting code health                        |
+| `coding-canary`            | `cheap`    | `minimax-fast`         | Relay route verification                                    |
+| `coding-coder`             | `balanced` | `deepseek-verifiable`  | Two-phase (plan + apply) worker                             |
+| `coding-countersign`       | `strong`   | `opus-thinking-medium` | Pre-work approval (ak 给事中) — three-state                 |
+| `coding-diarist`           | `balanced` | `deepseek-verifiable`  | Decision recorder (ak 起居郎) — two-state                   |
+| `coding-doctor`            | `balanced` | `deepseek-verifiable`  | Factory health diagnostic (ak 太医署)                       |
+| `coding-fixer`             | `balanced` | `deepseek-verifiable`  | Finalization (run gates, fix easy red)                      |
+| `coding-inspector`         | `strong`   | `opus-thinking-high`   | Post-impl code quality gate (ak 台院) — three-state          |
+| `coding-judge`             | `strong`   | `gpt-judgment-high`    | Verdict on a diff (APPROVE/REJECT)                          |
+| `coding-mapper`            | `balanced` | `deepseek-verifiable`  | Structural map / dependency graph                           |
+| `coding-notary`            | `cheap`    | `deepseek-verifiable`  | Read-only evidence collector                                |
+| `coding-objector`          | `strong`   | `gpt-judgment-high`    | Judge adversary (refutes coding-judge verdicts)             |
+| `coding-planner`           | `balanced` | `deepseek-verifiable`  | Step-by-step plan with Verify per step                      |
+| `coding-profiler`          | `balanced` | `deepseek-verifiable`  | Performance diagnosis (perf only)                           |
+| `coding-secretariat`       | `cheap`    | `minimax-medium`       | Audit log recorder (opt-in)                                 |
+| `coding-tester`            | `balanced` | `deepseek-verifiable`  | Test generation + maintenance                               |
 
 These are the framework's default assignments. Users override them per-role in their
 profile's `bindings:` if their subscription or cost model differs.
+
+---
+
+## Three-state output for judgment roles (v0.9.0+)
+
+Ak-faithful judgment roles (currently `coding-countersign` and `coding-inspector`)
+emit a three-state verdict:
+
+- `converged` — all audit steps pass; release-ready.
+- `continue` — must return for rework; cite the failed step + specific finding.
+- `escalate` — the seat cannot rule (e.g. countersign finds owner-intent conflict).
+  Route to the next tier (owner, `coding-judge`, or strong-tier re-review).
+
+This differs from existing binary judgment roles (`coding-judge` = APPROVE/REJECT,
+`coding-objector` = CONFIRM/OBJECT, `coding-fixer` = GATES_GREEN/NEEDS_REWORK/
+SEATBELT_HIT). The divergence is intentional: ak's pattern requires three states
+for any role that owns an escalation path. Existing roles keep their role-specific
+output formats.
+
+Codemode scripts that parse `VERDICT:` lines must handle BOTH two-state (existing)
+and three-state (new) verdict values.
+
+---
+
+## Shared souls (v0.9.0+)
+
+Roles declare a primary `soul:` plus an optional `souls_extra:` list in their
+frontmatter. The shared-soul catalogue is rooted at the repo's `souls/` directory;
+role frontmatter references it via `../../souls/<soul-name>.md` (relative to the role
+file). Generic law is prepended before role-specific law; role body comes last.
+
+- `../../souls/audit-law.md` — base layer for audit-facing roles
+- `../../souls/countersign-law.md` — 5-step audit + 5-question rubric (v0.9.0)
+- `../../souls/inspector-law.md` — 4-dimension code-quality gate (v0.9.0)
+- `../../souls/doctor-law.md` — factory health diagnostic posture (v0.9.0)
+- `../../souls/quality-law.md` — complexity + test budgets (v0.9.0)
 
 ---
 
@@ -183,4 +225,4 @@ profile's `bindings:` if their subscription or cost model differs.
 - `references/profile-schema.md` — full profile YAML schema and binding semantics
 - `references/dynamic-model-binding-design.md` — why we need real-time binding (rationale for this whole design)
 - `registry/aliases.yaml` — the alias catalogue `model_recommendation` points into
-- `role-packs/coding/*.md` — the 11 shipped role packs this guide documents
+- `role-packs/coding/*.md` — the 17 shipped role packs this guide documents
