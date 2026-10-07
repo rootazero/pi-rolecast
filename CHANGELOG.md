@@ -2,6 +2,39 @@
 
 All notable changes to pi-rolecast are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] — 2026-10-09
+
+### ⚠ BREAKING CHANGES
+
+- **Legacy role-pack files hard-deleted.** `role-packs/coding/coding-{implementer,reviewer,docs,orchestrator}.md` no longer ship with the framework. Profiles that still declare the legacy role names in `bindings:` or `contracts:` continue to hard-fail at load time (per v0.7.0 E3) but the `deprecated_redirect` skip clause in `discoverRolePacks` is gone — projects that forked the legacy files must `git rm` them. See [Migration guide (v0.6.0 → v0.8.0)](references/profile-schema.md#migration-guide-v060--v080).
+
+### Removed (F1 — legacy role-pack files)
+
+- **`role-packs/coding/coding-implementer.md`**, **`coding-reviewer.md`**, **`coding-docs.md`**, **`coding-orchestrator.md`**. Removed via `git rm`. The `deprecated_redirect` skip clause in `src/profile_loader.ts` (`discoverRolePacks`) is gone.
+- **`LEGACY_ROLE_REDIRECTS` table removed from `src/profile_loader.ts`.** The migration hints that v0.7.0's `parseProfile` consulted are now inlined as a hard-coded four-name check with the same successor name and `REMOVED` semantics.
+- **`LEGACY_ROLE_REDIRECTS` consult branch removed from `src/extension.ts`.** The tool_call hook now hard-fails legacy role names with the same migration hint via a hard-coded check.
+
+### Added (F2 — runtime narrowing coverage)
+
+- **`tests/unit/test_runtime_hook.ts`** gained three integration-style tests covering the `enforceRoleNarrowing` contract end-to-end:
+  * fresh session has unrestricted `currentRole` (no dispatch yet).
+  * Agent dispatch sets `currentRole` to the dispatched `subagent_type`.
+  * sequential dispatches track the last one — documents the
+    parallel-subagents-share-last-role limitation noted in
+    `src/extension.ts:474-483`.
+
+### Added (F3 — audit dispatch helpers)
+
+- **`src/audit_workflow.ts`** exports four new helpers:
+  * `resolveAuditDispatchPlan(profile, phaseName)` → `{ phase, dispatch, unresolved }`. Maps declared `audit_roles` to per-role `{ role, alias, model_id, channel_id }` entries; surfaces unresolved roles separately so workflows can hard-fail on typos.
+  * `recordAuditVerdict(logDir, role, verdict, escalation)` → `{ attempt, capReached }`. `approved` does not increment; `needs_rework` and `rejected` both increment.
+  * `readAuditVerdicts(runDir)` + `summarizeAuditVerdicts(verdicts)`. The gate runner consumes the persisted `<runDir>/audit-verdicts.json` file the workflow writes; rejected takes priority over needs_rework when computing the summary.
+- **`src/gate_runner.ts`** `PhaseResult` gains `audit_required`, `audit_plan`, `audit_verdict`. `runPhase` reads `audit-verdicts.json` *before* the attempt loop and short-circuits to `status: "fail"` with `reason: "audit:needs_rework"` or `"audit:rejected"` when the verdict summary is non-approved. The computed `audit_plan` is emitted on every phase result with non-empty `audit_roles` so the workflow does not need to call `resolveAuditDispatchPlan` separately.
+
+### Migration
+
+- **v0.7.0 → v0.8.0** is a one-step rename (the v0.7.0 `deprecated_redirect` shim was a stepping stone). See the migration guide in `references/profile-schema.md`. Run `npx pi-rolecast rolecast-validate` after editing; the schema reference describes the four-table rename + `git rm` sequence.
+
 ## [0.7.0] — 2026-10-08
 
 ### ⚠ BREAKING CHANGES

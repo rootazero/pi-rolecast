@@ -171,6 +171,92 @@ not mutate state — the caller increments after deciding to resubmit.
 Atomic counter writes (tmp file + rename) prevent concurrent readers
 from observing a partial JSON document.
 
+## Audit dispatch (v0.8.0+)
+
+The v0.8.0 F-slot extends the audit surface with dispatch helpers and
+verdict consumption. Two new pieces:
+
+### Dispatch plan (workflow → audit team)
+
+The workflow orchestrator calls `resolveAuditDispatchPlan(profile, phaseName)`
+to get the per-role model + channel for each declared `audit_role`:
+
+```typescript
+import { resolveAuditDispatchPlan } from "pi-rolecast/dist/audit_workflow.js";
+
+const plan = resolveAuditDispatchPlan(profile, "review");
+if (plan.unresolved.length > 0) {
+    throw new Error(
+        `audit_roles unresolved: ${plan.unresolved.join(", ")}`,
+    );
+}
+for (const dispatch of plan.dispatch) {
+    await Agent({
+        subagent_type: dispatch.role,
+        input: { model: dispatch.alias, ... },
+    });
+}
+```
+
+`AuditDispatch` carries `role`, `alias`, `model_id`, and `channel_id`.
+The gate runner also emits `audit_required` + `audit_plan` on the
+`PhaseResult` so callers do not have to call `resolveAuditDispatchPlan`
+separately when they have the gate summary in hand.
+
+### Verdict consumption (workflow → gate runner)
+
+After dispatching the audit team, the workflow writes
+`<runDir>/audit-verdicts.json`:
+
+```json
+{
+  "phase": "review",
+  "verdicts": [
+    { "role": "coding-judge",    "verdict": "approved" },
+    { "role": "coding-countersign", "verdict": "needs_rework", "reason": "missing tests" }
+  ]
+}
+```
+
+The gate runner reads this file *before* attempting the phase commands.
+A summary of `rejected` or `needs_rework` short-circuits the phase to
+`status: "fail"` with `reason: "audit:<summary>"`. The summary
+semantics (in priority order):
+
+1. any `rejected` verdict → summary is `"rejected"`
+2. any `needs_rework` verdict → summary is `"needs_rework"`
+3. otherwise → `"approved"`
+
+When the audit verdict summary is non-approved, `attempt: 0` is
+recorded on the `PhaseResult` so callers can distinguish
+audit-driven failures from command-driven ones.
+
+### Recording verdicts
+
+Helpers in `src/audit_workflow.ts` keep the counter consistent:
+
+```typescript
+import {
+    recordAuditVerdict,
+    type AuditVerdict,
+    type Escalation,
+} from "pi-rolecast/dist/audit_workflow.js";
+
+const r = recordAuditVerdict(
+    runDir,
+    "coding-judge",
+    "needs_rework" as AuditVerdict,
+    profile.escalation as Escalation,
+);
+if (r.capReached) {
+    // permanent failure — stop the loop
+}
+```
+
+`approved` does NOT increment; `needs_rework` and `rejected` both do.
+The `capReached` flag is computed via `canResubmit` against the
+configured `escalation.audit_max_resubmits` cap.
+
 ## Role-pack frontmatter
 
 Each role lives at `role-packs/<group>/<role>.md`. Frontmatter
@@ -189,9 +275,67 @@ keys consumed by `discoverRolePacks`:
 | `allowed_tools` | list[string] (v0.6.0+) | Tools the role is allowed to call. Documented in the role-pack `.md` (declarative, not enforced at dispatch — see `src/extension.ts` `enforceRoleNarrowing` for the runtime enforcement surface). |
 | `soul` | string (v0.6.0+) | Relative path from this role file to a shared soul markdown. |
 | `forbidden_bash_patterns` | list[string] (v0.6.0+) | Literal substrings; documented as bash seatbelt in the role-pack `.md`. |
-| `deprecated_redirect` | string or null (v0.7.0+) | When present, the file is skipped at discovery time. The value points at the successor role (or `null` for fully removed). |
 
-## Migration guide (v0.6.0 → v0.7.0)
+> **v0.8.0 (F1) — BREAKING:** the `deprecated_redirect` key was removed
+> along with the legacy role-pack files
+> (`coding-{implementer,reviewer,docs,orchestrator}.md`). Hard-fail
+> on legacy role names is enforced by `src/profile_loader.ts`; see
+> the v0.7.0 → v0.8.0 migration below.
+
+## Migration guide (v0.6.0 → v0.8.0)
+
+v0.7.0 was a soft-cutover: bindings could still declare the legacy
+names and the framework rewrote them. v0.8.0 hardens that contract:
+
+### 1. Rename your bindings
+
+Open `.pi/rolecast.yaml` `bindings:` (and `contracts:` declarations if
+you have any):
+
+| Legacy name | Successor |
+|---|---|
+| `coding-implementer` | `coding-coder` |
+| `coding-reviewer`   | `coding-judge`  |
+| `coding-docs`       | `coding-diarist` |
+| `coding-orchestrator` | *(delete the line; see ADR-0010)* |
+
+### 2. Remove the legacy role-pack files (if you copied them into your project)
+
+v0.8.0 ships without these files in the upstream `role-packs/coding/`
+tree. If your project forked them:
+
+```bash
+git rm role-packs/coding/coding-implementer.md
+git rm role-packs/coding/coding-reviewer.md
+git rm role-packs/coding/coding-docs.md
+git rm role-packs/coding/coding-orchestrator.md
+```
+
+### 3. Run validate
+
+```bash
+npx pi-rolecast rolecast-validate
+```
+
+Profile validation now hard-fails on legacy names with a clear
+migration message.
+
+### 4. Adopt audit dispatch (optional)
+
+If your workflow orchestrator retries on audit rejection, import the
+v0.8.0 helpers from `pi-rolecast/dist/audit_workflow.js`:
+
+* `resolveAuditDispatchPlan(profile, phaseName)` for dispatch
+* `recordAuditVerdict(runDir, role, verdict, escalation)` for the
+  resubmit counter
+* `readAuditVerdicts(runDir)` + `summarizeAuditVerdicts(verdicts)`
+  for the verdict file format
+
+Write the verdict file at `<runDir>/audit-verdicts.json` before
+re-running the gate so the gate can short-circuit on non-approved
+summaries.
+
+### v0.6.0 → v0.7.0 migration (already applied)
 
 1. Open your `.pi/rolecast.yaml` bindings and rename:
    * `coding-implementer` → `coding-coder`

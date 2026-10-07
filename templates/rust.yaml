@@ -1,15 +1,18 @@
 # Pre-fill for Rust projects. Edit fields to match your toolchain.
 #
-# v0.7.0: bindings use the new active role names. LEGACY_ROLE_ALIASES was
-# removed in v0.7.0, so old names (coding-implementer / coding-reviewer /
-# coding-docs / coding-orchestrator) now hard-fail with a clear migration
-# hint. Profiles still on v0.6.0 names must rename or remove the entry
-# before upgrading. See references/profile-schema.md for the migration
-# guide.
+# v0.8.0: the v0.7.0 LEGACY_ROLE_ALIASES shim has been hard-deleted; the
+# legacy role-pack files (coding-{implementer,reviewer,docs,orchestrator}.md)
+# are gone from role-packs/coding/. Old role names continue to hard-fail at
+# load time with a clear migration hint. Profiles still on v0.6.0 names must
+# rename (or remove) the binding + contracts entries and `git rm` any forked
+# legacy files. See references/profile-schema.md for the migration guide.
 #
-# The audit triad (countersign / notary / secretariat) is OPT-IN — keep it
-# commented out unless you want strict two-pair-of-eyes governance. The
-# fixer is the finalization phase of a coder dispatch (ADR-0034); bind it
+# v0.8.0 also adds the audit dispatch helpers (resolveAuditDispatchPlan /
+# recordAuditVerdict) for workflows that retry on audit rejection. Bind the
+# audit triad (countersign / notary / secretariat) if you want the
+# gate-runner verdict short-circuit to drive your resubmit loop.
+#
+# The fixer is the finalization phase of a coder dispatch (ADR-0034); bind it
 # if you want a hard gate between apply and merge.
 
 framework_version: 0.2.0
